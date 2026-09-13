@@ -1,39 +1,26 @@
 export const VENMO_USERNAME = 'Timothymei71';
-export const PRICES = { express: { S: 5.99, M: 4.99, L: 3.99 }, pickup: { S: 3.99, M: 2.99, L: 1.99 }, returns: { S: 4.99, M: 3.99, L: 2.99 } };
-export function calculateAmount(service, size, quantity) {
-  if (!PRICES[service]?.[size] || !Number.isInteger(quantity) || quantity < 1) throw new Error('Invalid order');
-  return Math.round(PRICES[service][size] * quantity * 100) / 100;
+export const ZELLE_PHONE = '469-964-9545';
+export const PRICES = { express: [5.99,4.99,3.99], pickup: [3.99,2.99,1.99], returns: [4.99,3.99,2.99] };
+export function tierIndex(q){ return q<=2?0:q<=4?1:2; }
+export function calculateAmount(service, quantity, legacyQuantity){ if(typeof quantity==='string'){const size=quantity; quantity=legacyQuantity; const rates={S:0,M:1,L:2}; if(!PRICES[service]||rates[size]===undefined||!Number.isInteger(quantity)||quantity<1)throw Error('Invalid order'); return +(PRICES[service][rates[size]]*quantity).toFixed(2);} if(!PRICES[service]||!Number.isInteger(quantity)||quantity<1||quantity>50) throw Error('Invalid order'); return +(PRICES[service][tierIndex(quantity)]*quantity).toFixed(2); }
+export function buildNote({dorm,room,size,tracking,carrier}) { return `DukeDrop Dorm: ${String(dorm).trim()} Room: ${String(room).trim()} Size: ${size} Tracking: ${String(tracking).trim()} Carrier: ${String(carrier).trim()}`; }
+export function buildMemo({service,quantity,dorm,room,tracking,source,mailroom,box,lockerLocation,locker,name}) {
+ let memo=`${service==='returns'?'RETURN':service.toUpperCase()} ${quantity}x — ${dorm||'[Dorm]'} ${room||'[Room]'}`;
+ const lines=String(tracking||'').trim().split('\n').filter(Boolean); if(lines.length) memo+=` — Tracking: ${lines[0].trim()}${lines.length>1?' (+more)':''}`;
+ if(service==='pickup') memo += source==='locker' ? ` — ${lockerLocation||'[Locker location]'} locker: ${locker||'[Locker code]'}` : ` — ${mailroom||'[Mailroom]'} mailroom, Box #${box||'[Box #]'}, Name: ${name||'[Full name]'}`;
+ return memo;
 }
-export function buildNote({ dorm, room, size, tracking, carrier }) {
-  return `DukeDrop Dorm: ${dorm.trim()} Room: ${room.trim()} Size: ${size} Tracking: ${tracking.trim()} Carrier: ${carrier.trim()}`;
-}
-export function validateOrder(order) {
-  const missing = ['dorm','room','tracking','carrier'].filter(k => !String(order[k] ?? '').trim());
-  if (!['S','M','L'].includes(order.size)) missing.push('package size');
-  if (!PRICES[order.service]) missing.push('service');
-  if (!Number.isInteger(order.quantity) || order.quantity < 1) missing.push('quantity');
-  return { valid: missing.length === 0, missing };
-}
-export function venmoLinks(order) {
-  const check = validateOrder(order); if (!check.valid) throw new Error(`Missing: ${check.missing.join(', ')}`);
-  const amount = calculateAmount(order.service, order.size, order.quantity).toFixed(2);
-  const note = buildNote(order);
-  // Venmo's mobile scheme does not consistently decode URLSearchParams' form-style
-  // '+' spaces. Encode each value directly so spaces arrive as %20 and literal
-  // plus signs remain safely encoded as %2B.
-  const params = [
-    ['txn', 'pay'],
-    ['recipients', VENMO_USERNAME],
-    ['amount', amount],
-    ['note', note],
-  ].map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&');
-  return { amount, note, deepLink: `venmo://paycharge?${params}`, webLink: `https://venmo.com/?${params}` };
-}
+export function buildConsent(name, mailroom){ return `PICKUP CONSENT — I, ${name||'[Full name]'}, authorize Sean Pao, Dylan Kim, or Timothy Mei to retrieve my package from the ${mailroom||'[Mailroom]'} mailroom.`; }
+export function validateOrder(o){ if(o.size){const missing=['dorm','room','tracking','carrier'].filter(k=>!String(o[k]??'').trim());if(!['S','M','L'].includes(o.size))missing.push('package size');if(!PRICES[o.service])missing.push('service');if(!Number.isInteger(o.quantity)||o.quantity<1)missing.push('quantity');return {valid:!missing.length,missing};} const missing=[]; for(const k of ['dorm','room','tracking']) if(!String(o[k]??'').trim()) missing.push(k); if(!PRICES[o.service]) missing.push('service'); if(!Number.isInteger(o.quantity)||o.quantity<1||o.quantity>50) missing.push('quantity'); if(o.service==='pickup'){ if(o.source==='locker'){if(!String(o.lockerLocation??'').trim())missing.push('locker building');if(!/^\d{6}$/.test(String(o.locker||'').trim()))missing.push('6-digit locker code');}else for(const k of ['mailroom','box','name'])if(!String(o[k]??'').trim())missing.push(k); } return {valid:!missing.length,missing}; }
+export function venmoLinks(o){const v=validateOrder(o);if(!v.valid)throw Error(`Missing: ${v.missing.join(', ')}`);const amount=(o.size?calculateAmount(o.service,o.size,o.quantity):calculateAmount(o.service,o.quantity)).toFixed(2),note=o.size?buildNote(o):buildMemo(o);const params=[['txn','pay'],['recipients',VENMO_USERNAME],['amount',amount],['note',note]].map(([k,x])=>`${k}=${encodeURIComponent(x)}`).join('&');return {amount,note,deepLink:`venmo://paycharge?${params}`,webLink:`https://venmo.com/?${params}`};}
+export function zelleMemo(o){return `$${calculateAmount(o.service,o.quantity).toFixed(2)} to ${ZELLE_PHONE} — ${buildMemo(o)}`;}
 
-if (typeof document !== 'undefined') {
-  const form = document.querySelector('#order-form'), status = document.querySelector('#status'), amount = document.querySelector('#amount'), note = document.querySelector('#note');
-  const fields = () => Object.fromEntries(new FormData(form));
-  function refresh() { const o=fields(), v=validateOrder({...o,quantity:Number(o.quantity)}); amount.textContent=v.valid ? `$${calculateAmount(o.service,o.size,Number(o.quantity)).toFixed(2)}` : '—'; note.textContent=v.valid ? buildNote(o) : 'Complete every field to generate your payment note.'; form.querySelector('button[type=submit]').disabled=!v.valid; }
-  form.addEventListener('input',refresh); form.addEventListener('change',refresh);
-  form.addEventListener('submit', e => { e.preventDefault(); const o=fields(); const links=venmoLinks({...o,quantity:Number(o.quantity)}); status.hidden=false; status.innerHTML=`Review and submit payment in Venmo for <strong>$${links.amount}</strong>. If the app does not open, <a href="${links.webLink}" target="_blank" rel="noopener">open Venmo in your browser</a> or use Venmo for <strong>@${VENMO_USERNAME}</strong> and copy the note below.`; window.location.href=links.deepLink; }); refresh();
+if(typeof document!=='undefined'){
+ const $=s=>document.querySelector(s), form=$('#order-form'), status=$('#status'), service=$('[name=service]'), extra=$('#extra'), payment=$('#payment'); let lastExtra='';
+ const fields=()=>Object.fromEntries(new FormData(form));
+ function render(){const o={...fields(),quantity:Number(fields().quantity)};const v=validateOrder(o);const amount=v.valid?calculateAmount(o.service,o.quantity):null;$('#instructions').textContent=o.service==='express'?'Express: ship to 927 Green Street, Durham, NC 27701. Use your own name as recipient.':o.service==='pickup'?'Pickup: we retrieve from your mailroom box or locker and deliver to your dorm.':'Returns: leave the package at your door; we repack it and take it to the package center.';$('#amount').textContent=amount===null?'—':`$${amount.toFixed(2)}`;$('#memo').textContent=v.valid?buildMemo(o):'Complete required fields to generate your payment memo.';$('#pay').disabled=!v.valid|| (o.service==='pickup'&&o.source!=='locker'&&!$('#consentDone').checked); payment.hidden=false; const extraKey=o.service+'|'+(o.source||'mailbox'); if(extraKey!==lastExtra){lastExtra=extraKey;extra.innerHTML=o.service==='pickup'?`<fieldset><legend>Pickup source</legend><label><input type="radio" name="source" value="mailbox" ${o.source!=='locker'?'checked':''}> Mailroom box</label><label><input type="radio" name="source" value="locker" ${o.source==='locker'?'checked':''}> Locker</label><div id="source-fields"></div></fieldset>`:''; if(o.service==='pickup'){const sf=$('#source-fields');sf.innerHTML=o.source==='locker'?'<label>Locker building<input name="lockerLocation" required></label><label>Locker code (6 digits)<input name="locker" inputmode="numeric" maxlength="6" required></label>':'<label>Mailroom building<input name="mailroom" required></label><label>Duke box #<input name="box" required></label><label>Full name<input name="name" required></label><section id="consent"><p>Step 1: send pickup consent before paying.</p><button type="button" id="consentCopy">Copy consent</button><button type="button" id="consentSend">Text consent</button><small id="consentMsg"></small><label><input type="checkbox" id="consentDone"> I have sent the consent</label></section>';} }
+ form.addEventListener('input',render);form.addEventListener('change',render); service.addEventListener('change',render);
+ form.addEventListener('click',e=>{if(e.target.id==='consentCopy'||e.target.id==='consentSend'){const o={...fields()};const text=buildConsent(o.name,o.mailroom);if(e.target.id==='consentCopy')navigator.clipboard?.writeText(text).then(()=>$('#consentMsg').textContent='Copied',()=>$('#consentMsg').textContent='Copy failed — select and copy the line above.');else{location.href='sms:+14699649545?body='+encodeURIComponent(text);$('#consentMsg').textContent='If Messages did not open, copy the consent line and text 469-964-9545 or DM @dukedrop_.';}}if(e.target.id==='copyMemo'){navigator.clipboard?.writeText($('#memo').textContent).then(()=>{e.target.textContent='Copied';},()=>e.target.textContent='Copy failed');}});
+ form.addEventListener('submit',e=>{e.preventDefault();const o={...fields(),quantity:Number(fields().quantity)};const method=o.payment; if(method==='venmo'){const l=venmoLinks(o);status.textContent=`Review and submit payment in Venmo for $${l.amount}. Payment is not confirmed here.`;location.href=l.deepLink;}else if(method==='zelle'){status.textContent=`Send a Zelle request/payment to ${ZELLE_PHONE}; payment is not submitted or confirmed here.`; }else status.textContent='Card payments are launching soon — use Venmo or Zelle.';status.hidden=false;}); render();
+}
 }
