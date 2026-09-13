@@ -1,6 +1,8 @@
 # DukeDrop
 
-Mobile-friendly order form for DukeDrop parcel delivery. It calculates service pricing and prepares a Venmo payment handoff to **@Timothymei71**.
+Mobile-friendly order form for DukeDrop parcel delivery. Express, Pickup, and Returns have distinct instructions, fields, and tiered per-parcel pricing. Pickup supports mailroom boxes or six-digit lockers; mailroom pickup requires a copied/sent consent statement before payment. Returns are left at the customer's door for repacking and package-center drop-off.
+
+Payment is a handoff only: Venmo opens a prefilled mobile-safe memo for **@Timothymei71**; Zelle displays **469-964-9545**, copies the complete memo, and instructs the user to send payment/request themselves. The app never confirms or submits payment. Card payments are not yet available.
 
 ## Run
 
