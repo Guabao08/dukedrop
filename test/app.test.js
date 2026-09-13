@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { calculateAmount, buildNote, buildMemo, buildConsent, validateOrder, venmoLinks, zelleMemo, SERVICE_DETAILS } from '../app.js';
+import {
+  SERVICE_DETAILS, VENMO_USERNAME, ZELLE_DISPLAY, EXPRESS_ADDRESS,
+  calculateAmount, tierFor, buildMemo, buildConsent, validateOrder, venmoLink, zelleLine,
+} from '../app.js';
 
 const root = new URL('../', import.meta.url);
 
@@ -33,35 +36,89 @@ test('built artifact works when served as static files', async () => {
   } finally { server.kill(); }
 });
 
-test('tier amount', () => assert.equal(calculateAmount('express', 'M', 3), 14.97));
-test('note contains required fields with ordinary spaces', () => {
-  const note = buildNote({ dorm: 'Randolph', room: '214', size: 'S', tracking: 'TBA 1', carrier: 'Amazon' });
-  assert.equal(note, 'DukeDrop Dorm: Randolph Room: 214 Size: S Tracking: TBA 1 Carrier: Amazon');
-  assert.doesNotMatch(note, /[|+]/);
-});
-test('validation requires all fields', () => assert.equal(validateOrder({ service: 'express', size: 'S', quantity: 1, dorm: '', room: '', tracking: '', carrier: '' }).valid, false));
-test('Pickup and Returns have distinct artifact requirements and prices', () => {
-  assert.notEqual(SERVICE_DETAILS.pickup.intro, SERVICE_DETAILS.returns.intro);
-  assert.equal(SERVICE_DETAILS.pickup.header, 'Parcels per trip');
+test('tiered pricing matches the design rate sheet for every service', () => {
+  assert.equal(calculateAmount('express', 1), 5.99);
+  assert.equal(calculateAmount('express', 3), 14.97);
+  assert.equal(calculateAmount('express', 5), 19.95);
   assert.equal(calculateAmount('pickup', 3), 8.97);
   assert.equal(calculateAmount('returns', 3), 11.97);
-  assert.equal(validateOrder({service:'returns', quantity:1, dorm:'A', room:'1', tracking:'T'}).valid, true);
-  assert.equal(validateOrder({service:'pickup', quantity:1, dorm:'A', room:'1', tracking:'T', source:'mailbox'}).valid, false);
-  assert.equal(validateOrder({service:'pickup', quantity:1, dorm:'A', room:'1', tracking:'T', source:'locker', lockerLocation:'Bell', locker:'123456'}).valid, true);
+  assert.throws(() => calculateAmount('express', 0));
+  assert.throws(() => calculateAmount('express', 51));
+  assert.throws(() => calculateAmount('bogus', 1));
 });
-test('Pickup consent and service payment data are distinct', () => {
-  assert.match(buildConsent('Jane Doe', 'Few Quad'), /authorize Sean Pao/);
-  assert.match(buildMemo({service:'pickup', quantity:1, dorm:'Few', room:'4', tracking:'T', source:'mailbox', mailroom:'Few', box:'9', name:'Jane'}), /mailroom, Box #9, Name: Jane/);
-  assert.match(buildMemo({service:'returns', quantity:1, dorm:'Few', room:'4', tracking:'T'}), /^RETURN/);
-  assert.match(zelleMemo({service:'returns', quantity:1, dorm:'Few', room:'4', tracking:'T'}), /469-964-9545/);
+
+test('tierFor reports the active tier index used for rate-row highlighting', () => {
+  assert.equal(tierFor('pickup', 1).index, 0);
+  assert.equal(tierFor('pickup', 4).index, 1);
+  assert.equal(tierFor('pickup', 20).index, 2);
 });
-test('Venmo links preserve ordered fields and mobile-safe note encoding', () => {
-  const x = venmoLinks({ service: 'pickup', size: 'L', quantity: 2, dorm: 'Few Quad', room: '4 A', tracking: '1&2 % special', carrier: 'UPS/Amazon' });
-  assert.match(x.deepLink, /venmo:\/\/paycharge\?/);
-  assert.match(x.deepLink, /txn=pay&recipients=Timothymei71&amount=3.98&note=/);
-  assert.match(x.deepLink, /note=DukeDrop%20Dorm%3A%20Few%20Quad%20Room%3A%204%20A/);
-  assert.doesNotMatch(x.deepLink, /note=[^&]*\+/);
-  assert.equal(new URL(x.webLink).searchParams.get('note'), x.note);
-  assert.equal(new URL(x.deepLink).searchParams.get('note'), x.note);
-  assert.doesNotMatch(new URL(x.deepLink).searchParams.get('note'), /[|+]/);
+
+test('Pickup and Returns have distinct copy, rate header, and prices', () => {
+  assert.notEqual(SERVICE_DETAILS.pickup.intro, SERVICE_DETAILS.returns.intro);
+  assert.equal(SERVICE_DETAILS.pickup.rateHeader, 'Parcels per trip');
+  assert.equal(SERVICE_DETAILS.express.rateHeader, 'Parcels per order');
+  assert.notEqual(SERVICE_DETAILS.pickup.callout, SERVICE_DETAILS.returns.callout);
+  assert.equal(SERVICE_DETAILS.express.callout, '');
+});
+
+test('validation requires dorm, room, and tracking for every service', () => {
+  assert.equal(validateOrder({ service: 'express', quantity: 1, dorm: '', room: '', tracking: '' }).valid, false);
+  assert.equal(validateOrder({ service: 'returns', quantity: 1, dorm: 'A', room: '1', tracking: 'T' }).valid, true);
+});
+
+test('Pickup mailroom requires mailroom, box, and name; locker requires building and a 6-digit code', () => {
+  assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', tracking: 'T', source: 'mailbox' }).valid, false);
+  const mailboxMissing = validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', tracking: 'T', source: 'mailbox' }).missing;
+  assert.deepEqual(mailboxMissing, ['which mailroom (building)', 'Duke box #', 'your name']);
+  assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', tracking: 'T', source: 'mailbox', mailroom: 'Few', box: '9', name: 'Jane' }).valid, true);
+  assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', tracking: 'T', source: 'locker', lockerLocation: 'Bell', locker: '12345' }).valid, false);
+  assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', tracking: 'T', source: 'locker', lockerLocation: 'Bell', locker: '123456' }).valid, true);
+});
+
+test('memo is service-specific: EXPRESS/RETURN/PICKUP prefixes and pickup source details', () => {
+  assert.match(buildMemo({ service: 'express', quantity: 2, dorm: 'Randolph', room: '214', tracking: 'TBA1' }), /^EXPRESS 2x — Randolph 214 — Tracking: TBA1$/);
+  assert.match(buildMemo({ service: 'returns', quantity: 1, dorm: 'Few', room: '4', tracking: 'T' }), /^RETURN /);
+  assert.match(
+    buildMemo({ service: 'pickup', quantity: 1, dorm: 'Few', room: '4', tracking: 'T', source: 'mailbox', mailroom: 'Few', box: '9', name: 'Jane' }),
+    /Few mailroom, Box #9, Name: Jane$/
+  );
+  assert.match(
+    buildMemo({ service: 'pickup', quantity: 1, dorm: 'Few', room: '4', tracking: 'T', source: 'locker', lockerLocation: 'Bell', locker: '447128' }),
+    /Bell locker: 447128$/
+  );
+  assert.doesNotMatch(buildMemo({ service: 'express', quantity: 1, dorm: 'A', room: '1', tracking: 'T' }), /[|+]/);
+});
+
+test('memo shows bracket placeholders for missing fields instead of disappearing', () => {
+  assert.equal(buildMemo({ service: 'express', quantity: 1, dorm: '', room: '', tracking: '' }), 'EXPRESS 1x — [Dorm] [Room]');
+});
+
+test('pickup consent text authorizes the named runners for the given mailroom', () => {
+  assert.match(buildConsent('Jane Doe', 'Few Quad'), /^PICKUP CONSENT — I, Jane Doe, authorize Sean Pao, Dylan Kim, or Timothy Mei to retrieve my package from the Few Quad mailroom\.$/);
+  assert.match(buildConsent('', ''), /\[Full name\].*\[Mailroom\]/);
+});
+
+test('Venmo link preserves ordered fields and mobile-safe note encoding', () => {
+  const o = { service: 'pickup', quantity: 2, dorm: 'Few Quad', room: '4 A', tracking: '1&2 % special\nTBA2', source: 'mailbox', mailroom: 'Few', box: '9', name: 'Jane' };
+  const link = venmoLink(o);
+  assert.equal(link.amount, calculateAmount('pickup', 2).toFixed(2));
+  assert.match(link.deepLink, /^venmo:\/\/paycharge\?txn=pay&recipients=Timothymei71&amount=[\d.]+&note=/);
+  assert.equal(new URL(link.deepLink.replace('venmo://', 'https://x/')).searchParams.get('note'), link.note);
+  assert.doesNotMatch(link.deepLink, /note=[^&]*\+/);
+  assert.equal(link.profileUrl, `https://venmo.com/u/${VENMO_USERNAME}`);
+});
+
+test('Venmo link throws with the missing fields when the order is incomplete', () => {
+  assert.throws(() => venmoLink({ service: 'express', quantity: 1, dorm: '', room: '', tracking: '' }), /Missing: dorm, room #, Amazon tracking #/);
+});
+
+test('Zelle line carries the amount, recipient, and full memo for a manual send/request — never a payment claim', () => {
+  const line = zelleLine({ service: 'returns', quantity: 1, dorm: 'Few', room: '4', tracking: 'T' });
+  const amount = calculateAmount('returns', 1).toFixed(2);
+  assert.equal(line, `$${amount} to ${ZELLE_DISPLAY} — RETURN 1x — Few 4 — Tracking: T`);
+  assert.doesNotMatch(line, /paid|confirmed|complete/i);
+});
+
+test('Express drop-off address matches the imported design', () => {
+  assert.equal(EXPRESS_ADDRESS, '927 Green Street, Durham, NC 27701');
 });
