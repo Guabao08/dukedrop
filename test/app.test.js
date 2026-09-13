@@ -127,5 +127,5 @@ test('Returns memo never contains tracking details', () => {
 });
 
 test('Express drop-off address matches the imported design', () => {
-  assert.equal(EXPRESS_ADDRESS, '927 Green Street, Durham, NC 27701');
+  assert.equal(EXPRESS_ADDRESS, '1610 Valley Creek Dr., Hillsborough, NC 27278');
 });

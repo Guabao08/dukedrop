@@ -7,8 +7,8 @@ each with its own remembered fields, tiered per-parcel pricing, and
 service-specific instructions — see `docs/design-comparison.md` for the full
 inventory of what the design specifies and how this app implements it.
 
-- **Express** ships to DukeDrop's own address (927 Green Street, Durham, NC
-  27701); the Express tab shows a dedicated "before anything else" banner
+- **Express** ships to DukeDrop's own address (1610 Valley Creek Dr., Hillsborough, NC
+  27278); the Express tab shows a dedicated "before anything else" banner
   with a copyable address.
 - **Pickup** is a mailroom box or a 6-digit locker code. Mailroom pickups
   show a "Step 1 · send consent" flow (name + a copy/text-able consent line);
