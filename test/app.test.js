@@ -34,6 +34,19 @@ test('built artifact works when served as static files', async () => {
 });
 
 test('tier amount', () => assert.equal(calculateAmount('express', 'M', 3), 14.97));
-test('note contains required fields', () => assert.equal(buildNote({ dorm: 'Randolph', room: '214', size: 'S', tracking: 'TBA 1', carrier: 'Amazon' }), 'DukeDrop | Dorm: Randolph | Room: 214 | Size: S | Tracking: TBA 1 | Carrier: Amazon'));
+test('note contains required fields with ordinary spaces', () => {
+  const note = buildNote({ dorm: 'Randolph', room: '214', size: 'S', tracking: 'TBA 1', carrier: 'Amazon' });
+  assert.equal(note, 'DukeDrop Dorm: Randolph Room: 214 Size: S Tracking: TBA 1 Carrier: Amazon');
+  assert.doesNotMatch(note, /[|+]/);
+});
 test('validation requires all fields', () => assert.equal(validateOrder({ service: 'express', size: 'S', quantity: 1, dorm: '', room: '', tracking: '', carrier: '' }).valid, false));
-test('Venmo links encode note and amount', () => { const x = venmoLinks({ service: 'pickup', size: 'L', quantity: 2, dorm: 'Few Quad', room: '4 A', tracking: '1&2', carrier: 'UPS' }); assert.match(x.deepLink, /venmo:\/\/paycharge\?/); assert.match(x.deepLink, /amount=3.98/); assert.match(x.deepLink, /note=DukeDrop\+%7C/); assert.equal(new URL(x.webLink).searchParams.get('note'), x.note); });
+test('Venmo links preserve ordered fields and mobile-safe note encoding', () => {
+  const x = venmoLinks({ service: 'pickup', size: 'L', quantity: 2, dorm: 'Few Quad', room: '4 A', tracking: '1&2 % special', carrier: 'UPS/Amazon' });
+  assert.match(x.deepLink, /venmo:\/\/paycharge\?/);
+  assert.match(x.deepLink, /txn=pay&recipients=Timothymei71&amount=3.98&note=/);
+  assert.match(x.deepLink, /note=DukeDrop%20Dorm%3A%20Few%20Quad%20Room%3A%204%20A/);
+  assert.doesNotMatch(x.deepLink, /note=[^&]*\+/);
+  assert.equal(new URL(x.webLink).searchParams.get('note'), x.note);
+  assert.equal(new URL(x.deepLink).searchParams.get('note'), x.note);
+  assert.doesNotMatch(new URL(x.deepLink).searchParams.get('note'), /[|+]/);
+});

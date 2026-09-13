@@ -5,7 +5,7 @@ export function calculateAmount(service, size, quantity) {
   return Math.round(PRICES[service][size] * quantity * 100) / 100;
 }
 export function buildNote({ dorm, room, size, tracking, carrier }) {
-  return `DukeDrop | Dorm: ${dorm.trim()} | Room: ${room.trim()} | Size: ${size} | Tracking: ${tracking.trim()} | Carrier: ${carrier.trim()}`;
+  return `DukeDrop Dorm: ${dorm.trim()} Room: ${room.trim()} Size: ${size} Tracking: ${tracking.trim()} Carrier: ${carrier.trim()}`;
 }
 export function validateOrder(order) {
   const missing = ['dorm','room','tracking','carrier'].filter(k => !String(order[k] ?? '').trim());
@@ -17,8 +17,17 @@ export function validateOrder(order) {
 export function venmoLinks(order) {
   const check = validateOrder(order); if (!check.valid) throw new Error(`Missing: ${check.missing.join(', ')}`);
   const amount = calculateAmount(order.service, order.size, order.quantity).toFixed(2);
-  const params = new URLSearchParams({ txn:'pay', recipients:VENMO_USERNAME, amount, note:buildNote(order) });
-  return { amount, note: buildNote(order), deepLink: `venmo://paycharge?${params}`, webLink: `https://venmo.com/?${params}` };
+  const note = buildNote(order);
+  // Venmo's mobile scheme does not consistently decode URLSearchParams' form-style
+  // '+' spaces. Encode each value directly so spaces arrive as %20 and literal
+  // plus signs remain safely encoded as %2B.
+  const params = [
+    ['txn', 'pay'],
+    ['recipients', VENMO_USERNAME],
+    ['amount', amount],
+    ['note', note],
+  ].map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&');
+  return { amount, note, deepLink: `venmo://paycharge?${params}`, webLink: `https://venmo.com/?${params}` };
 }
 
 if (typeof document !== 'undefined') {
