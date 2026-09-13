@@ -69,11 +69,13 @@ export function calculateAmount(service, quantity) {
   return +(tierFor(service, quantity).tier.rate * quantity).toFixed(2);
 }
 
-export function buildMemo({ service, quantity, dorm, room, tracking, source, mailroom, box, lockerLocation, locker, name }) {
+export function buildMemo({ service, quantity, dorm, room, carrier, tracking, source, mailroom, box, lockerLocation, locker, name }) {
   const prefix = SERVICE_DETAILS[service].memoPrefix;
   let memo = `${prefix} ${quantity}x — ${dorm || '[Dorm]'} ${room || '[Room]'}`;
-  const lines = String(tracking || '').trim().split('\n').filter(Boolean);
-  if (lines.length) memo += ` — Tracking: ${lines[0].trim()}${lines.length > 1 ? ' (+more)' : ''}`;
+  if (service !== 'returns') {
+    const lines = String(tracking || '').trim().split('\n').filter(Boolean);
+    if (carrier || lines.length) memo += ` — ${carrier || '[Carrier]'} tracking: ${lines[0]?.trim() || '[Tracking #]'}${lines.length > 1 ? ' (+more)' : ''}`;
+  }
   if (service === 'pickup') {
     memo += source === 'locker'
       ? ` — ${lockerLocation || '[Locker location]'} locker: ${locker || '[Locker code]'}`
@@ -92,7 +94,10 @@ export function validateOrder(o) {
   if (!Number.isInteger(o.quantity) || o.quantity < 1 || o.quantity > 50) missing.push('quantity');
   if (!String(o.dorm ?? '').trim()) missing.push('dorm');
   if (!String(o.room ?? '').trim()) missing.push('room #');
-  if (!String(o.tracking ?? '').trim()) missing.push('Amazon tracking #');
+  if (o.service !== 'returns') {
+    if (!String(o.carrier ?? '').trim()) missing.push('carrier');
+    if (!String(o.tracking ?? '').trim()) missing.push('tracking #');
+  }
   if (o.service === 'pickup') {
     if (o.source === 'locker') {
       if (!String(o.lockerLocation ?? '').trim()) missing.push('which locker (building)');
@@ -129,7 +134,7 @@ if (typeof document !== 'undefined') {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   const makeServiceState = (service) => ({
-    qty: 1, dorm: '', room: '', tracking: '', payMethod: 'venmo',
+    qty: 1, dorm: '', room: '', carrier: '', tracking: '', payMethod: 'venmo',
     ...(service === 'pickup' ? { source: 'mailbox', mailroom: '', box: '', lockerLocation: '', locker: '', name: '', consentFallback: false } : {}),
   });
 
@@ -146,7 +151,7 @@ if (typeof document !== 'undefined') {
 
   function order(key) {
     const s = state[key];
-    return { service: key, quantity: s.qty, dorm: s.dorm, room: s.room, tracking: s.tracking, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name };
+    return { service: key, quantity: s.qty, dorm: s.dorm, room: s.room, carrier: s.carrier, tracking: s.tracking, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name };
   }
 
   function buildVM(key) {
@@ -281,7 +286,7 @@ if (typeof document !== 'undefined') {
           <label>Room #<input type="text" placeholder="e.g. 214" value="${esc(s.room)}" data-field="room"></label>
         </div>
         ${sourceToggleHtml(key)}
-        <label>Amazon tracking # (required, one per line)<textarea placeholder="TBA123456789" data-field="tracking">${esc(s.tracking)}</textarea></label>
+        ${key !== 'returns' ? `<div class="field-grid"><label>Carrier (required)<input type="text" placeholder="e.g. UPS, USPS, FedEx, DHL" value="${esc(s.carrier)}" data-field="carrier"></label><label>Tracking # (required, one per line)<textarea placeholder="Enter tracking number" data-field="tracking">${esc(s.tracking)}</textarea></label></div>` : ''}
         ${consentHtml(key, vm)}
         <div class="total-row">
           <div>
