@@ -1,4 +1,5 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {calculateAmount,buildNote,validateOrder,venmoLinks} from '../app.js';
+import test from 'node:test';import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';import {calculateAmount,buildNote,validateOrder,venmoLinks} from '../app.js';
+test('Vercel deploys the static site and runs the regression suite',async()=>{const config=JSON.parse(await readFile(new URL('../vercel.json',import.meta.url)));assert.equal(config.buildCommand,'npm test');assert.equal(config.outputDirectory,'.');assert.equal(config.functions,undefined);for(const file of ['index.html','app.js','styles.css'])assert.ok((await readFile(new URL(`../${file}`,import.meta.url))).length>0)});
 test('tier amount',()=>assert.equal(calculateAmount('express','M',3),14.97));
 test('note contains required fields',()=>assert.equal(buildNote({dorm:'Randolph',room:'214',size:'S',tracking:'TBA 1',carrier:'Amazon'}),'DukeDrop | Dorm: Randolph | Room: 214 | Size: S | Tracking: TBA 1 | Carrier: Amazon'));
 test('validation requires all fields',()=>assert.equal(validateOrder({service:'express',size:'S',quantity:1,dorm:'',room:'',tracking:'',carrier:''}).valid,false));
