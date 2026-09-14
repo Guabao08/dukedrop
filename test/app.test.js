@@ -4,7 +4,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import {
   SERVICE_DETAILS, VENMO_USERNAME, ZELLE_DISPLAY, EXPRESS_ADDRESS,
-  calculateAmount, tierFor, normalizeTrackingNumbers, buildMemo, buildConsent, validateOrder, venmoLink, zelleLine, splitPaymentRequests, PAYMENT_MEMO_MAX_LENGTH,
+  calculateAmount, tierFor, normalizeTrackingNumbers, buildMemo, buildConsent, validateOrder, venmoLink, zelleLine, splitPaymentRequests, PAYMENT_MEMO_MAX_LENGTH, discountPercent,
 } from '../app.js';
 
 const root = new URL('../', import.meta.url);
@@ -37,9 +37,11 @@ test('built artifact works when served as static files', async () => {
 });
 
 test('tiered pricing matches the design rate sheet for every service', () => {
-  assert.equal(calculateAmount('express', 1), 5.99);
-  assert.equal(calculateAmount('express', 3), 14.97);
-  assert.equal(calculateAmount('express', 5), 19.95);
+  assert.equal(calculateAmount('express', 1), 4.99);
+  assert.equal(calculateAmount('express', 3), 11.97);
+  assert.equal(calculateAmount('express', 5), 14.95);
+  assert.deepEqual(SERVICE_DETAILS.express.tiers.map(t => [t.was, t.rate]), [[5.99, 4.99], [4.99, 3.99], [3.99, 2.99]]);
+  assert.deepEqual(SERVICE_DETAILS.express.tiers.map(t => discountPercent(t.was, t.rate)), [17, 20, 25]);
   assert.equal(calculateAmount('pickup', 3), 8.97);
   assert.equal(calculateAmount('returns', 3), 11.97);
   assert.throws(() => calculateAmount('express', 0));
@@ -51,6 +53,13 @@ test('tierFor reports the active tier index used for rate-row highlighting', () 
   assert.equal(tierFor('pickup', 1).index, 0);
   assert.equal(tierFor('pickup', 4).index, 1);
   assert.equal(tierFor('pickup', 20).index, 2);
+});
+
+test('Express discount metadata renders as actual whole-number savings', () => {
+  const markup = SERVICE_DETAILS.express.tiers.map(t => `<del>$${t.was.toFixed(2)}</del> <b>$${t.rate.toFixed(2)}</b> <span>${discountPercent(t.was, t.rate)}% off</span>`).join('');
+  assert.match(markup, /<del>\$5\.99<\/del> <b>\$4\.99<\/b> <span>17% off<\/span>/);
+  assert.match(markup, /<del>\$4\.99<\/del> <b>\$3\.99<\/b> <span>20% off<\/span>/);
+  assert.match(markup, /<del>\$3\.99<\/del> <b>\$2\.99<\/b> <span>25% off<\/span>/);
 });
 
 test('Pickup and Returns have distinct copy, rate header, and prices', () => {
@@ -136,8 +145,8 @@ test('payment memos split at whole identifiers with deterministic cent allocatio
   const requests = splitPaymentRequests(o);
   assert.equal(requests.length, 2);
   assert.deepEqual(requests.map(r => r.identifiers), [[`${'x'.repeat(225)}`], [`${'B'.repeat(40)}`, 'C']]);
-  assert.equal(requests.reduce((sum, r) => sum + r.amountCents, 0), 1995);
-  assert.deepEqual(requests.map(r => r.amountCents), [998, 997]);
+  assert.equal(requests.reduce((sum, r) => sum + r.amountCents, 0), 1495);
+  assert.deepEqual(requests.map(r => r.amountCents), [748, 747]);
   assert.ok(requests.every(r => r.memo.length <= PAYMENT_MEMO_MAX_LENGTH));
 });
 
