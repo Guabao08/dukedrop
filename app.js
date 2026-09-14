@@ -23,9 +23,9 @@ export const SERVICE_DETAILS = {
     memoPrefix: 'EXPRESS',
     callout: '',
     tiers: [
-      { label: '1–2 parcels · small', min: 1, max: 2, rate: 5.99 },
-      { label: '3–4 parcels · medium', min: 3, max: 4, rate: 4.99 },
-      { label: '5+ parcels · large', min: 5, max: Infinity, rate: 3.99 },
+      { label: '1–2 parcels · small', min: 1, max: 2, rate: 4.99, was: 5.99 },
+      { label: '3–4 parcels · medium', min: 3, max: 4, rate: 3.99, was: 4.99 },
+      { label: '5+ parcels · large', min: 5, max: Infinity, rate: 2.99, was: 3.99 },
     ],
   },
   pickup: {
@@ -57,6 +57,10 @@ export const SERVICE_DETAILS = {
 };
 
 export function money(n) { return '$' + n.toFixed(2); }
+
+export function discountPercent(was, now) {
+  return Math.round((1 - now / was) * 100);
+}
 
 // Tracking/order numbers are entered one per line. Keep identifier characters
 // intact while making whitespace and accidental duplicate entries harmless.
@@ -248,7 +252,7 @@ if (typeof document !== 'undefined') {
     return `
       <div class="rates" data-role="rates">
         <div class="rate-header"><span>${esc(detail.rateHeader)}</span><span>Rate</span></div>
-        ${detail.tiers.map((t, i) => `<div class="rate-row${i === activeIndex ? ' is-active' : ''}" data-tier-index="${i}"><span>${esc(t.label)}</span><strong>${money(t.rate)}/parcel</strong></div>`).join('')}
+        ${detail.tiers.map((t, i) => `<div class="rate-row${i === activeIndex ? ' is-active' : ''}" data-tier-index="${i}"><span>${esc(t.label)}</span><strong>${t.was ? `<span class="rate-discount">${discountPercent(t.was, t.rate)}% off</span><del>${money(t.was)}</del> <b>${money(t.rate)}</b>` : money(t.rate)}/parcel</strong>${t.was ? '<small>/parcel</small>' : ''}</div>`).join('')}
       </div>`;
   }
 

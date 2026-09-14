@@ -25,7 +25,11 @@ h2{font:600 27px var(--serif);margin:0 0 10px;color:var(--ink)}
 .rate-header{display:flex;justify-content:space-between;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border);padding-bottom:8px}
 .rate-row{display:flex;justify-content:space-between;align-items:center;padding:11px 6px;border-bottom:1px solid var(--border);border-radius:6px;font-family:var(--mono)}
 .rate-row span{font-weight:600;font-size:13.5px}
-.rate-row strong{font-weight:700;font-size:16px}
+.rate-row strong{font-weight:700;font-size:16px;display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.rate-row strong b{font-weight:800;color:var(--ink)}
+.rate-row del{font-size:13px;color:var(--muted);font-weight:500}
+.rate-row small{display:block;color:var(--muted);font:11px var(--mono);margin-left:4px}
+.rate-discount{order:3;background:var(--accent);color:#fff;border-radius:999px;padding:3px 7px;font:700 10px var(--mono);letter-spacing:.02em;white-space:nowrap}
 .rate-row.is-active{background:var(--tint)}
 label{display:block;font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:16px}
 input,textarea{display:block;width:100%;margin-top:7px;padding:10px 11px;border:1.5px solid var(--border);border-radius:8px;font:15px var(--sans);background:var(--card);color:var(--ink)}
