@@ -54,6 +54,16 @@ export const SERVICE_DETAILS = {
 
 export function money(n) { return '$' + n.toFixed(2); }
 
+// Tracking/order numbers are entered one per line. Keep identifier characters
+// intact while making whitespace and accidental duplicate entries harmless.
+export function normalizeTrackingNumbers(value) {
+  const seen = new Set();
+  return String(value ?? '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line && !seen.has(line) && seen.add(line));
+}
+
 export function tierFor(service, qty) {
   const tiers = SERVICE_DETAILS[service].tiers;
   for (let i = 0; i < tiers.length; i++) {
@@ -74,8 +84,8 @@ export function buildMemo({ service, quantity, dorm, room, carrier, tracking, so
   const prefix = SERVICE_DETAILS[service].memoPrefix;
   let memo = `${prefix} ${quantity}x — ${dorm || '[Dorm]'} ${room || '[Room]'}`;
   if (service !== 'returns') {
-    const lines = String(tracking || '').trim().split('\n').filter(Boolean);
-    if (carrier || lines.length) memo += ` — ${carrier || '[Carrier]'} tracking: ${lines[0]?.trim() || '[Tracking #]'}${lines.length > 1 ? ' (+more)' : ''}`;
+    const lines = normalizeTrackingNumbers(tracking);
+    if (carrier || lines.length) memo += ` — ${carrier || '[Carrier]'} tracking: ${lines.join(', ') || '[Tracking #]'}`;
   }
   if (service === 'pickup') {
     memo += source === 'locker'
@@ -97,7 +107,7 @@ export function validateOrder(o) {
   if (!String(o.room ?? '').trim()) missing.push('room #');
   if (o.service !== 'returns') {
     if (!String(o.carrier ?? '').trim()) missing.push('carrier');
-    if (!String(o.tracking ?? '').trim()) missing.push('tracking #');
+    if (normalizeTrackingNumbers(o.tracking).length === 0) missing.push('tracking/order # (at least one)');
   }
   if (o.service === 'pickup') {
     if (o.source === 'locker') {
@@ -287,7 +297,7 @@ if (typeof document !== 'undefined') {
           <label>Room #<input type="text" placeholder="e.g. 214" value="${esc(s.room)}" data-field="room"></label>
         </div>
         ${sourceToggleHtml(key)}
-        ${key !== 'returns' ? `<div class="field-grid"><label>Carrier (required)<input type="text" placeholder="e.g. UPS, USPS, FedEx, DHL" value="${esc(s.carrier)}" data-field="carrier"></label><label>Tracking # (required, one per line)<textarea placeholder="Enter tracking number" data-field="tracking">${esc(s.tracking)}</textarea></label></div>` : ''}
+        ${key !== 'returns' ? `<div class="field-grid"><label>Carrier (required)<input type="text" placeholder="e.g. UPS, USPS, FedEx, DHL" value="${esc(s.carrier)}" data-field="carrier"></label><label>Tracking/order numbers (required)<span class="field-hint">One number per line — add several if needed.</span><textarea rows="3" placeholder="Enter one number per line" data-field="tracking">${esc(s.tracking)}</textarea></label></div>` : ''}
         ${consentHtml(key, vm)}
         <div class="total-row">
           <div>
