@@ -4,7 +4,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import {
   SERVICE_DETAILS, VENMO_USERNAME, ZELLE_DISPLAY, EXPRESS_ADDRESS,
-  calculateAmount, tierFor, buildMemo, buildConsent, validateOrder, venmoLink, zelleLine,
+  calculateAmount, tierFor, normalizeTrackingNumbers, buildMemo, buildConsent, validateOrder, venmoLink, zelleLine,
 } from '../app.js';
 
 const root = new URL('../', import.meta.url);
@@ -61,6 +61,11 @@ test('Pickup and Returns have distinct copy, rate header, and prices', () => {
   assert.equal(SERVICE_DETAILS.express.callout, '');
 });
 
+test('tracking numbers normalize lines, whitespace, blanks, and duplicates', () => {
+  assert.deepEqual(normalizeTrackingNumbers(' A-1  \n\nB&2\r\n A-1 '), ['A-1', 'B&2']);
+  assert.deepEqual(normalizeTrackingNumbers('   \n'), []);
+});
+
 test('tracked services require a carrier and tracking; Returns does not', () => {
   assert.equal(validateOrder({ service: 'express', quantity: 1, dorm: 'A', room: '1', carrier: 'USPS', tracking: 'T' }).valid, true);
   assert.equal(validateOrder({ service: 'express', quantity: 1, dorm: 'A', room: '1', tracking: 'T' }).valid, false);
@@ -77,7 +82,7 @@ test('Pickup mailroom requires mailroom, box, and name; locker requires building
 });
 
 test('memo is service-specific: EXPRESS/RETURN/PICKUP prefixes and pickup source details', () => {
-  assert.match(buildMemo({ service: 'express', quantity: 2, dorm: 'Randolph', room: '214', carrier: 'USPS', tracking: 'TBA1' }), /^EXPRESS 2x — Randolph 214 — USPS tracking: TBA1$/);
+  assert.match(buildMemo({ service: 'express', quantity: 2, dorm: 'Randolph', room: '214', carrier: 'USPS', tracking: 'TBA1\nTBA2\nTBA1' }), /^EXPRESS 2x — Randolph 214 — USPS tracking: TBA1, TBA2$/);
   assert.match(buildMemo({ service: 'returns', quantity: 1, dorm: 'Few', room: '4', tracking: 'T' }), /^RETURN /);
   assert.match(
     buildMemo({ service: 'pickup', quantity: 1, dorm: 'Few', room: '4', tracking: 'T', source: 'mailbox', mailroom: 'Few', box: '9', name: 'Jane' }),
@@ -110,7 +115,7 @@ test('Venmo link preserves ordered fields and mobile-safe note encoding', () => 
 });
 
 test('Venmo link throws with the missing fields when the order is incomplete', () => {
-  assert.throws(() => venmoLink({ service: 'express', quantity: 1, dorm: '', room: '', tracking: '' }), /Missing: dorm, room #, carrier, tracking #/);
+  assert.throws(() => venmoLink({ service: 'express', quantity: 1, dorm: '', room: '', tracking: '' }), /Missing: dorm, room #, carrier, tracking\/order #/);
 });
 
 test('Zelle line carries the amount, recipient, and full memo for a manual send/request — never a payment claim', () => {
