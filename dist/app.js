@@ -9,6 +9,10 @@ export const CONSENT_PHONE = '2019160008';
 export const EXPRESS_ADDRESS = '1610 Valley Creek Dr., Hillsborough, NC 27278';
 export const CONSENT_AUTHORIZERS = 'Sean Pao, Dylan Kim, or Timothy Mei';
 export const INSTAGRAM_HANDLE = 'dukedrop_';
+// Venmo's current help documentation describes a 280-character payment note.
+// Zelle has no single network-wide memo limit (banks vary), so we use this
+// documented Venmo limit for both paths to guarantee copy/paste parity.
+export const PAYMENT_MEMO_MAX_LENGTH = 280;
 
 export const SERVICE_DETAILS = {
   express: {
@@ -95,6 +99,31 @@ export function buildMemo({ service, quantity, dorm, room, carrier, tracking, so
   return memo;
 }
 
+export function splitPaymentRequests(o) {
+  const totalCents = Math.round(calculateAmount(o.service, o.quantity) * 100);
+  const identifiers = o.service === 'returns' ? [] : normalizeTrackingNumbers(o.tracking);
+  const chunks = [];
+  for (const identifier of identifiers) {
+    const candidate = [...(chunks.at(-1) || []), identifier];
+    const memo = buildMemo({ ...o, tracking: candidate.join('\\n') });
+    if (memo.length > PAYMENT_MEMO_MAX_LENGTH) {
+      if (!chunks.length) throw new Error(`Tracking/order number is too long to fit in a payment memo; please shorten/check it: ${identifier}`);
+      chunks.push([identifier]);
+      const solo = buildMemo({ ...o, tracking: identifier });
+      if (solo.length > PAYMENT_MEMO_MAX_LENGTH) throw new Error(`Tracking/order number is too long to fit in a payment memo; please shorten/check it: ${identifier}`);
+    } else if (chunks.length) chunks[chunks.length - 1].push(identifier);
+    else chunks.push([identifier]);
+  }
+  if (!chunks.length) chunks.push([]);
+  const base = Math.floor(totalCents / chunks.length);
+  const remainder = totalCents % chunks.length;
+  return chunks.map((ids, i) => {
+    const amountCents = base + (i < remainder ? 1 : 0);
+    const memo = buildMemo({ ...o, tracking: ids.join('\\n') });
+    return { index: i + 1, total: chunks.length, identifiers: ids, amountCents, amount: (amountCents / 100).toFixed(2), memo };
+  });
+}
+
 export function buildConsent(name, mailroom) {
   return `PICKUP CONSENT — I, ${name || '[Full name]'}, authorize ${CONSENT_AUTHORIZERS} to retrieve my package from the ${mailroom || '[Mailroom]'} mailroom.`;
 }
@@ -109,6 +138,9 @@ export function validateOrder(o) {
     if (!String(o.carrier ?? '').trim()) missing.push('carrier');
     if (normalizeTrackingNumbers(o.tracking).length === 0) missing.push('tracking/order # (at least one)');
   }
+  if (missing.length === 0) {
+    try { splitPaymentRequests(o); } catch (error) { missing.push(error.message); }
+  }
   if (o.service === 'pickup') {
     if (o.source === 'locker') {
       if (!String(o.lockerLocation ?? '').trim()) missing.push('which locker (building)');
@@ -122,11 +154,12 @@ export function validateOrder(o) {
   return { valid: missing.length === 0, missing };
 }
 
-export function venmoLink(o) {
+export function venmoLink(o, request) {
   const v = validateOrder(o);
   if (!v.valid) throw new Error(`Missing: ${v.missing.join(', ')}`);
-  const amount = calculateAmount(o.service, o.quantity).toFixed(2);
-  const note = buildMemo(o);
+  const payment = request || splitPaymentRequests(o)[0];
+  const amount = payment.amount;
+  const note = payment.memo;
   const params = [['txn', 'pay'], ['recipients', VENMO_USERNAME], ['amount', amount], ['note', note]]
     .map(([k, x]) => `${k}=${encodeURIComponent(x)}`).join('&');
   return {
@@ -137,8 +170,9 @@ export function venmoLink(o) {
   };
 }
 
-export function zelleLine(o) {
-  return `${money(calculateAmount(o.service, o.quantity))} to ${ZELLE_DISPLAY} — ${buildMemo(o)}`;
+export function zelleLine(o, request) {
+  const payment = request || splitPaymentRequests(o)[0];
+  return `$${payment.amount} to ${ZELLE_DISPLAY} — ${payment.memo}`;
 }
 
 if (typeof document !== 'undefined') {
@@ -179,6 +213,7 @@ if (typeof document !== 'undefined') {
       key, detail, tierIndex, total, subText: `${s.qty} × ${money(tier.rate)}`,
       memo: buildMemo(o), ready: v.valid, missing: v.missing,
       isLocker, showConsent, consentText,
+      requests: (() => { try { return splitPaymentRequests(o); } catch { return []; } })(),
       zelleLine: zelleLine(o),
     };
   }
@@ -257,16 +292,16 @@ if (typeof document !== 'undefined') {
   function paymentPanelHtml(key, vm) {
     const s = state[key];
     const method = s.payMethod;
+    const requests = vm.requests;
+    const requestSummary = requests.length > 1 ? `<div class="payment-requests"><strong>Payment requests</strong>${requests.map((r) => `<div class="payment-request"><div>Payment ${r.index} of ${r.total}: <strong>${money(r.amountCents / 100)}</strong></div><div class="fallback-mono">${esc(r.identifiers.join(', '))}</div><div>${esc(r.memo)}</div><button type="button" class="btn-pay" data-action="${method === 'venmo' ? 'pay-venmo' : 'pay-zelle'}" data-request="${r.index}" ${vm.ready ? '' : 'disabled'}>${method === 'venmo' ? 'Open' : 'Copy'} payment ${r.index}</button></div>`).join('')}</div>` : '';
     if (method === 'venmo') {
       const label = vm.ready ? `Pay ${money(vm.total)} with Venmo` : 'Enter details to pay';
-      return `
-        <button type="button" class="btn-pay" data-action="pay-venmo" ${vm.ready ? '' : 'disabled'}>${label}</button>
-        ${state.venmoFallback[key] ? `<div class="fallback">Venmo app didn't open? Send <strong>${money(vm.total)}</strong> to <a href="https://venmo.com/u/${VENMO_USERNAME}" target="_blank" rel="noopener">@${VENMO_USERNAME}</a> with the memo above.</div>` : ''}`;
+      return `${requestSummary || `<button type="button" class="btn-pay" data-action="pay-venmo" ${vm.ready ? '' : 'disabled'}>${label}</button>`}
+        ${state.venmoFallback[key] ? `<div class="fallback">Venmo app didn't open? Send the requested amount to <a href="https://venmo.com/u/${VENMO_USERNAME}" target="_blank" rel="noopener">@${VENMO_USERNAME}</a>. DukeDrop does not confirm payment.</div>` : ''}`;
     }
     if (method === 'zelle') {
       const label = vm.ready ? `Pay ${money(vm.total)} with Zelle` : 'Enter details to pay with Zelle';
-      return `
-        <button type="button" class="btn-pay" data-action="pay-zelle" ${vm.ready ? '' : 'disabled'}>${label}</button>
+      return `${requestSummary || `<button type="button" class="btn-pay" data-action="pay-zelle" ${vm.ready ? '' : 'disabled'}>${label}</button>`}
         ${state.zelleFallback[key] ? `<div class="fallback">Note copied. Open your bank's app and send to <strong>${esc(ZELLE_DISPLAY)}</strong> — paste the note below if your bank allows one:<div class="fallback-mono" data-role="zelle-line">${esc(vm.zelleLine)}</div></div>` : ''}`;
     }
     return `<div class="card-note">Card payments are launching soon — please use Venmo or Zelle for now.</div>`;
@@ -430,7 +465,8 @@ if (typeof document !== 'undefined') {
     if (action === 'pay-venmo') {
       const vm = buildVM(key);
       if (!vm.ready) return;
-      const link = venmoLink(order(key));
+      const requests = splitPaymentRequests(order(key));
+      const link = venmoLink(order(key), requests[(Number(el.dataset.request) || 1) - 1]);
       try { window.location.href = link.deepLink; } catch { /* Venmo app handoff unsupported here */ }
       setTimeout(() => { state.venmoFallback[key] = true; render(); }, 1200);
       return;
@@ -438,7 +474,8 @@ if (typeof document !== 'undefined') {
     if (action === 'pay-zelle') {
       const vm = buildVM(key);
       if (!vm.ready) return;
-      copy(vm.zelleLine, () => {
+      const request = vm.requests[(Number(el.dataset.request) || 1) - 1];
+      copy(request ? zelleLine(order(key), request) : vm.zelleLine, () => {
         state.zelleFallback[key] = true;
         render();
       });
