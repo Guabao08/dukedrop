@@ -4,7 +4,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import {
   SERVICE_DETAILS, VENMO_USERNAME, ZELLE_DISPLAY, EXPRESS_ADDRESS,
-  calculateAmount, tierFor, normalizeTrackingNumbers, buildMemo, buildConsent, validateOrder, venmoLink, zelleLine,
+  calculateAmount, tierFor, normalizeTrackingNumbers, buildMemo, buildConsent, validateOrder, venmoLink, zelleLine, splitPaymentRequests, PAYMENT_MEMO_MAX_LENGTH,
 } from '../app.js';
 
 const root = new URL('../', import.meta.url);
@@ -129,6 +129,28 @@ test('Returns memo never contains tracking details', () => {
   const memo = buildMemo({ service: 'returns', quantity: 1, dorm: 'Few', room: '4', tracking: 'SECRET-TRACKING' });
   assert.equal(memo, 'RETURN 1x — Few 4');
   assert.doesNotMatch(zelleLine({ service: 'returns', quantity: 1, dorm: 'Few', room: '4', tracking: 'SECRET-TRACKING' }), /tracking|SECRET/i);
+});
+
+test('payment memos split at whole identifiers with deterministic cent allocation', () => {
+  const o = { service: 'express', quantity: 5, dorm: 'A', room: '1', carrier: 'USPS', tracking: `${'x'.repeat(225)}\n${'B'.repeat(40)}\nC` };
+  const requests = splitPaymentRequests(o);
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests.map(r => r.identifiers), [[`${'x'.repeat(225)}`], [`${'B'.repeat(40)}`, 'C']]);
+  assert.equal(requests.reduce((sum, r) => sum + r.amountCents, 0), 1995);
+  assert.deepEqual(requests.map(r => r.amountCents), [998, 997]);
+  assert.ok(requests.every(r => r.memo.length <= PAYMENT_MEMO_MAX_LENGTH));
+});
+
+test('an identifier that cannot fit is a clear validation error', () => {
+  const o = { service: 'express', quantity: 1, dorm: 'A', room: '1', carrier: 'USPS', tracking: 'x'.repeat(280) };
+  assert.equal(validateOrder(o).valid, false);
+  assert.match(validateOrder(o).missing.at(-1), /too long.*shorten\/check/i);
+});
+
+test('Returns always remains one request and does not expose tracking', () => {
+  const requests = splitPaymentRequests({ service: 'returns', quantity: 3, dorm: 'Few', room: '4', tracking: 'secret' });
+  assert.equal(requests.length, 1);
+  assert.doesNotMatch(requests[0].memo, /secret|tracking/i);
 });
 
 test('Express drop-off address matches the imported design', () => {
