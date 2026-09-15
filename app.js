@@ -14,6 +14,8 @@ export const INSTAGRAM_HANDLE = 'dukedrop_';
 // documented Venmo limit for both paths to guarantee copy/paste parity.
 export const PAYMENT_MEMO_MAX_LENGTH = 280;
 
+export const SIZE_LIMIT_NOTE = "Size limit: nothing bigger than a mini microwave. Bigger than that — furniture, TVs, chairs, and the like — goes through Big Drop instead.";
+
 export const SERVICE_DETAILS = {
   express: {
     eyebrow: 'Express',
@@ -22,6 +24,8 @@ export const SERVICE_DETAILS = {
     intro: "Ship to our DukeDrop address to skip the mailroom's 48-hour hold — we bring it straight to your door.",
     memoPrefix: 'EXPRESS',
     callout: '',
+    unit: 'parcel',
+    sizeLimitNote: SIZE_LIMIT_NOTE,
     tiers: [
       { label: '1–2 parcels · small', min: 1, max: 2, rate: 4.99, was: 5.99 },
       { label: '3–4 parcels · medium', min: 3, max: 4, rate: 3.99, was: 4.99 },
@@ -35,6 +39,8 @@ export const SERVICE_DETAILS = {
     intro: 'We grab it from your mailroom box or locker — third-party pickup, delivered straight to your dorm.',
     memoPrefix: 'PICKUP',
     callout: 'Mailroom pickups need your OK on file — text us the consent line before paying. Locker codes already work as consent, so lockers skip straight to paying.',
+    unit: 'parcel',
+    sizeLimitNote: SIZE_LIMIT_NOTE,
     tiers: [
       { label: '1–2 parcels · small', min: 1, max: 2, rate: 3.99 },
       { label: '3–4 parcels · medium', min: 3, max: 4, rate: 2.99 },
@@ -47,11 +53,26 @@ export const SERVICE_DETAILS = {
     rateHeader: 'Parcels per trip',
     intro: 'Leave it at your door — we repack it, get it ready to ship, and drop it at the package center for you.',
     memoPrefix: 'RETURN',
-    callout: "Your payment note carries your dorm + room — that's your authorization, nothing else to send.",
+    callout: "Stick your return label on the package before we pick it up — we can't ship it out without one. Your payment note carries your dorm + room — that's your authorization, nothing else to send.",
+    unit: 'parcel',
+    sizeLimitNote: `${SIZE_LIMIT_NOTE} Big Drop applies to returns too.`,
     tiers: [
       { label: '1–2 parcels · small', min: 1, max: 2, rate: 4.99 },
       { label: '3–4 parcels · medium', min: 3, max: 4, rate: 3.99 },
       { label: '5+ parcels · large', min: 5, max: Infinity, rate: 2.99 },
+    ],
+  },
+  bigdrop: {
+    eyebrow: 'Big Drop',
+    title: 'Big Drop',
+    rateHeader: 'Items per order',
+    intro: 'Furniture, TVs, microwaves, chairs — anything too big for Express, Pickup, or Returns. Ship it to us and we bring it to your dorm, or we grab it from your mailroom or locker.',
+    memoPrefix: 'BIGDROP',
+    callout: 'For big/bulky items only — furniture, TVs, microwaves, chairs, and similar. Mailroom pickups still need consent on file.',
+    unit: 'item',
+    highlight: true,
+    tiers: [
+      { label: 'Any item · furniture, TV, microwave, chair, etc.', min: 1, max: 50, rate: 12, was: 15 },
     ],
   },
 };
@@ -88,14 +109,18 @@ export function calculateAmount(service, quantity) {
   return +(tierFor(service, quantity).tier.rate * quantity).toFixed(2);
 }
 
-export function buildMemo({ service, quantity, dorm, room, carrier, tracking, source, mailroom, box, lockerLocation, locker, name }) {
+export function isPickupStyle(service, mode) {
+  return service === 'pickup' || (service === 'bigdrop' && mode === 'pickup');
+}
+
+export function buildMemo({ service, quantity, dorm, room, carrier, tracking, source, mailroom, box, lockerLocation, locker, name, mode }) {
   const prefix = SERVICE_DETAILS[service].memoPrefix;
   let memo = `${prefix} ${quantity}x — ${dorm || '[Dorm]'} ${room || '[Room]'}`;
   if (service !== 'returns') {
     const lines = normalizeTrackingNumbers(tracking);
     if (carrier || lines.length) memo += ` — ${carrier || '[Carrier]'} tracking: ${lines.join(', ') || '[Tracking #]'}`;
   }
-  if (service === 'pickup') {
+  if (isPickupStyle(service, mode)) {
     memo += source === 'locker'
       ? ` — ${lockerLocation || '[Locker location]'} locker: ${locker || '[Locker code]'}`
       : ` — ${mailroom || '[Mailroom]'} mailroom, Box #${box || '[Box #]'}, Name: ${name || '[Full name]'}`;
@@ -145,7 +170,7 @@ export function validateOrder(o) {
   if (missing.length === 0) {
     try { splitPaymentRequests(o); } catch (error) { missing.push(error.message); }
   }
-  if (o.service === 'pickup') {
+  if (isPickupStyle(o.service, o.mode)) {
     if (o.source === 'locker') {
       if (!String(o.lockerLocation ?? '').trim()) missing.push('which locker (building)');
       if (!/^\d{6}$/.test(String(o.locker ?? '').trim())) missing.push('6-digit locker code');
@@ -184,7 +209,8 @@ if (typeof document !== 'undefined') {
 
   const makeServiceState = (service) => ({
     qty: 1, dorm: '', room: '', carrier: '', tracking: '', payMethod: 'venmo',
-    ...(service === 'pickup' ? { source: 'mailbox', mailroom: '', box: '', lockerLocation: '', locker: '', name: '', consentFallback: false } : {}),
+    ...(service === 'pickup' || service === 'bigdrop' ? { source: 'mailbox', mailroom: '', box: '', lockerLocation: '', locker: '', name: '', consentFallback: false } : {}),
+    ...(service === 'bigdrop' ? { mode: 'ship' } : {}),
   });
 
   const state = {
@@ -192,15 +218,16 @@ if (typeof document !== 'undefined') {
     express: makeServiceState('express'),
     pickup: makeServiceState('pickup'),
     returns: makeServiceState('returns'),
-    venmoFallback: { express: false, pickup: false, returns: false },
-    zelleFallback: { express: false, pickup: false, returns: false },
+    bigdrop: makeServiceState('bigdrop'),
+    venmoFallback: { express: false, pickup: false, returns: false, bigdrop: false },
+    zelleFallback: { express: false, pickup: false, returns: false, bigdrop: false },
   };
 
   const app = document.getElementById('app');
 
   function order(key) {
     const s = state[key];
-    return { service: key, quantity: s.qty, dorm: s.dorm, room: s.room, carrier: s.carrier, tracking: s.tracking, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name };
+    return { service: key, quantity: s.qty, dorm: s.dorm, room: s.room, carrier: s.carrier, tracking: s.tracking, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name, mode: s.mode };
   }
 
   function buildVM(key) {
@@ -210,26 +237,28 @@ if (typeof document !== 'undefined') {
     const { tier, index: tierIndex } = tierFor(key, s.qty);
     const total = tier.rate * s.qty;
     const v = validateOrder(o);
-    const isLocker = key === 'pickup' && s.source === 'locker';
-    const showConsent = key === 'pickup' && !isLocker;
+    const pickupStyle = isPickupStyle(key, s.mode);
+    const isLocker = pickupStyle && s.source === 'locker';
+    const showConsent = pickupStyle && !isLocker;
     const consentText = showConsent ? buildConsent(s.name, s.mailroom) : '';
     return {
       key, detail, tierIndex, total, subText: `${s.qty} × ${money(tier.rate)}`,
       memo: buildMemo(o), ready: v.valid, missing: v.missing,
-      isLocker, showConsent, consentText,
+      isLocker, showConsent, consentText, pickupStyle,
       requests: (() => { try { return splitPaymentRequests(o); } catch { return []; } })(),
       zelleLine: zelleLine(o),
     };
   }
 
   function tabsHtml() {
-    return ['express', 'pickup', 'returns'].map((k) =>
-      `<button type="button" class="tab${state.active === k ? ' active' : ''}" data-action="tab" data-service="${k}">${SERVICE_DETAILS[k].title}</button>`
+    return ['express', 'pickup', 'returns', 'bigdrop'].map((k) =>
+      `<button type="button" class="tab${state.active === k ? ' active' : ''}${SERVICE_DETAILS[k].highlight ? ' tab-highlight' : ''}" data-action="tab" data-service="${k}">${SERVICE_DETAILS[k].title}${SERVICE_DETAILS[k].highlight ? '<span class="tab-badge">New</span>' : ''}</button>`
     ).join('');
   }
 
   function bannerHtml(key) {
-    if (key !== 'express') return '';
+    const s = state[key];
+    if (key !== 'express' && !(key === 'bigdrop' && s.mode === 'ship')) return '';
     return `
       <div class="banner-dark">
         <div class="banner-eyebrow">Before anything else</div>
@@ -243,7 +272,12 @@ if (typeof document !== 'undefined') {
 
   function calloutHtml(detail) {
     if (!detail.callout) return '';
-    return `<div class="callout"><span class="callout-label">Consent</span>${esc(detail.callout)}</div>`;
+    return `<div class="callout"><span class="callout-label">${detail.title === 'Big Drop' ? 'Heads up' : 'Consent'}</span>${esc(detail.callout)}</div>`;
+  }
+
+  function sizeLimitHtml(detail) {
+    if (!detail.sizeLimitNote) return '';
+    return `<div class="callout callout-size"><span class="callout-label">Size limit</span>${esc(detail.sizeLimitNote)}</div>`;
   }
 
   function ratesHtml(key) {
@@ -252,13 +286,24 @@ if (typeof document !== 'undefined') {
     return `
       <div class="rates" data-role="rates">
         <div class="rate-header"><span>${esc(detail.rateHeader)}</span><span>Rate</span></div>
-        ${detail.tiers.map((t, i) => `<div class="rate-row${i === activeIndex ? ' is-active' : ''}" data-tier-index="${i}"><span>${esc(t.label)}</span><strong>${t.was ? `<span class="rate-discount">${discountPercent(t.was, t.rate)}% off</span><del>${money(t.was)}</del> <b>${money(t.rate)}</b>` : money(t.rate)}/parcel</strong>${t.was ? '<small>/parcel</small>' : ''}</div>`).join('')}
+        ${detail.tiers.map((t, i) => `<div class="rate-row${i === activeIndex ? ' is-active' : ''}" data-tier-index="${i}"><span>${esc(t.label)}</span><strong>${t.was ? `<span class="rate-discount">${discountPercent(t.was, t.rate)}% off</span><del>${money(t.was)}</del> <b>${money(t.rate)}</b>` : money(t.rate)}/${detail.unit}</strong>${t.was ? `<small>/${detail.unit}</small>` : ''}</div>`).join('')}
+      </div>`;
+  }
+
+  function modeToggleHtml(key) {
+    if (key !== 'bigdrop') return '';
+    const s = state[key];
+    const isPickup = s.mode === 'pickup';
+    return `
+      <div class="toggle-row">
+        <button type="button" class="tab${!isPickup ? ' active' : ''}" data-action="mode" data-mode="ship">Ship it to us</button>
+        <button type="button" class="tab${isPickup ? ' active' : ''}" data-action="mode" data-mode="pickup">Grab it for me</button>
       </div>`;
   }
 
   function sourceToggleHtml(key) {
-    if (key !== 'pickup') return '';
     const s = state[key];
+    if (!isPickupStyle(key, s.mode)) return '';
     const isLocker = s.source === 'locker';
     return `
       <div class="toggle-row">
@@ -316,15 +361,17 @@ if (typeof document !== 'undefined') {
     const s = state[key];
     const vm = buildVM(key);
     return `
-      <div class="card">
+      <div class="card${detail.highlight ? ' card-highlight' : ''}">
         ${bannerHtml(key)}
         <div class="eyebrow">${esc(detail.eyebrow)}</div>
         <h2>${esc(detail.title)}</h2>
         <p class="desc">${esc(detail.intro)}</p>
         ${calloutHtml(detail)}
+        ${sizeLimitHtml(detail)}
+        ${modeToggleHtml(key)}
         ${ratesHtml(key)}
         <div class="field">
-          <label>Parcels</label>
+          <label>${detail.unit === 'item' ? 'Items' : 'Parcels'}</label>
           <div class="stepper">
             <button type="button" data-action="qty-dec">−</button>
             <input type="text" inputmode="numeric" value="${s.qty}" data-field="qty" data-role="qty-input">
@@ -443,7 +490,8 @@ if (typeof document !== 'undefined') {
     const action = el.dataset.action;
 
     if (action === 'tab') { state.active = el.dataset.service; render(); return; }
-    if (action === 'source') { state.pickup.source = el.dataset.source; render(); return; }
+    if (action === 'source') { state[key].source = el.dataset.source; render(); return; }
+    if (action === 'mode') { state[key].mode = el.dataset.mode; render(); return; }
     if (action === 'paymethod') { state[key].payMethod = el.dataset.method; render(); return; }
     if (action === 'qty-dec') { setQty(key, state[key].qty - 1); render(); return; }
     if (action === 'qty-inc') { setQty(key, state[key].qty + 1); render(); return; }

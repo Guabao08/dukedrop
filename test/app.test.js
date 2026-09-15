@@ -4,7 +4,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import {
   SERVICE_DETAILS, VENMO_USERNAME, ZELLE_DISPLAY, EXPRESS_ADDRESS,
-  calculateAmount, tierFor, normalizeTrackingNumbers, buildMemo, buildConsent, validateOrder, venmoLink, zelleLine, splitPaymentRequests, PAYMENT_MEMO_MAX_LENGTH, discountPercent,
+  calculateAmount, tierFor, normalizeTrackingNumbers, buildMemo, buildConsent, validateOrder, venmoLink, zelleLine, splitPaymentRequests, PAYMENT_MEMO_MAX_LENGTH, discountPercent, isPickupStyle,
 } from '../app.js';
 
 const root = new URL('../', import.meta.url);
@@ -164,4 +164,49 @@ test('Returns always remains one request and does not expose tracking', () => {
 
 test('Express drop-off address matches the imported design', () => {
   assert.equal(EXPRESS_ADDRESS, '1610 Valley Creek Dr., Hillsborough, NC 27278');
+});
+
+test('Big Drop is a flat $12 (discounted from $15) per item, and only Big Drop is highlighted', () => {
+  assert.equal(calculateAmount('bigdrop', 1), 12);
+  assert.equal(calculateAmount('bigdrop', 3), 36);
+  assert.deepEqual(SERVICE_DETAILS.bigdrop.tiers.map(t => [t.was, t.rate]), [[15, 12]]);
+  assert.equal(discountPercent(15, 12), 20);
+  assert.equal(SERVICE_DETAILS.bigdrop.highlight, true);
+  assert.ok(!SERVICE_DETAILS.express.highlight && !SERVICE_DETAILS.pickup.highlight && !SERVICE_DETAILS.returns.highlight);
+});
+
+test('Express, Pickup, and Returns all carry a size-limit note pointing oversized items to Big Drop', () => {
+  for (const key of ['express', 'pickup', 'returns']) {
+    assert.match(SERVICE_DETAILS[key].sizeLimitNote, /mini microwave/i);
+    assert.match(SERVICE_DETAILS[key].sizeLimitNote, /Big Drop/);
+  }
+  assert.match(SERVICE_DETAILS.returns.sizeLimitNote, /returns too/i);
+});
+
+test('Returns requires a return label on the package before pickup', () => {
+  assert.match(SERVICE_DETAILS.returns.callout, /return label/i);
+});
+
+test('isPickupStyle treats plain Pickup and Big Drop-in-pickup-mode alike, but not Big Drop shipped to us', () => {
+  assert.equal(isPickupStyle('pickup'), true);
+  assert.equal(isPickupStyle('bigdrop', 'pickup'), true);
+  assert.equal(isPickupStyle('bigdrop', 'ship'), false);
+  assert.equal(isPickupStyle('express'), false);
+});
+
+test('Big Drop in ship mode behaves like Express: no pickup fields required, no source suffix in the memo', () => {
+  const o = { service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', carrier: 'UPS', tracking: 'T', mode: 'ship' };
+  assert.equal(validateOrder(o).valid, true);
+  assert.equal(buildMemo(o), 'BIGDROP 1x — A 1 — UPS tracking: T');
+});
+
+test('Big Drop in pickup mode requires mailroom/locker fields just like Pickup', () => {
+  const missingMailroom = validateOrder({ service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', carrier: 'UPS', tracking: 'T', mode: 'pickup', source: 'mailbox' }).missing;
+  assert.deepEqual(missingMailroom, ['which mailroom (building)', 'Duke box #', 'your name']);
+  const ok = validateOrder({ service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', carrier: 'UPS', tracking: 'T', mode: 'pickup', source: 'mailbox', mailroom: 'Few', box: '9', name: 'Jane' });
+  assert.equal(ok.valid, true);
+  assert.match(
+    buildMemo({ service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', carrier: 'UPS', tracking: 'T', mode: 'pickup', source: 'locker', lockerLocation: 'Bell', locker: '447128' }),
+    /Bell locker: 447128$/
+  );
 });
