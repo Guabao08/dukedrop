@@ -1,8 +1,13 @@
 :root{--ink:#00205b;--accent:#9c7c2d;--surface:#f4f5f8;--card:#fff;--border:#dadfe8;--muted:#5b6472;--danger:#9a2e1f;--danger-soft:#f7e4de;--tint:#e7ecf7;--sans:'Archivo',Arial,sans-serif;--serif:'Instrument Serif',Georgia,serif;--mono:'JetBrains Mono',monospace}
 *{box-sizing:border-box}
+html{scroll-behavior:smooth}
 body{margin:0;background:var(--surface);color:var(--ink);font:15px var(--sans)}
-header{max-width:640px;margin:auto;padding:20px;display:flex;gap:10px;align-items:center}
+header{max-width:640px;margin:auto;padding:20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 header b{font:22px var(--serif)}
+.top-nav{display:flex;gap:16px;margin-left:auto}
+.top-nav a{font:600 12px var(--sans);color:var(--muted);text-decoration:none}
+.top-nav a:hover{color:var(--ink)}
+#app,#faq{scroll-margin-top:20px}
 header small,.hero small,.eyebrow,.banner-eyebrow,.total-label,.step-label,.rate-header{font:11px var(--mono);letter-spacing:.1em}
 header small{color:var(--muted)}
 .hero{background:var(--ink);color:var(--surface);padding:48px max(20px,calc((100% - 600px)/2)) 88px}
