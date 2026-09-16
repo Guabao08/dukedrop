@@ -2,7 +2,7 @@
 // (DukeDrop.dc.html Component + DukeDrop-print.dc.html rate sheet). Pure and
 // framework-free so it can run both in the browser and under node:test.
 
-export const VENMO_USERNAME = 'Timothymei71';
+export const VENMO_USERNAME = 'dukedrop';
 export const ZELLE_DISPLAY = '(469) 964-9545';
 export const ZELLE_DIGITS = ZELLE_DISPLAY.replace(/\D/g, '');
 export const CONSENT_PHONE = '2019160008';

@@ -117,7 +117,7 @@ test('Venmo link preserves ordered fields and mobile-safe note encoding', () => 
   const o = { service: 'pickup', quantity: 2, dorm: 'Few Quad', room: '4 A', carrier: 'Royal Mail', tracking: '1&2 % special\nTBA2', source: 'mailbox', mailroom: 'Few', box: '9', name: 'Jane' };
   const link = venmoLink(o);
   assert.equal(link.amount, calculateAmount('pickup', 2).toFixed(2));
-  assert.match(link.deepLink, /^venmo:\/\/paycharge\?txn=pay&recipients=Timothymei71&amount=[\d.]+&note=/);
+  assert.match(link.deepLink, new RegExp(`^venmo://paycharge\\?txn=pay&recipients=${VENMO_USERNAME}&amount=[\\d.]+&note=`));
   assert.equal(new URL(link.deepLink.replace('venmo://', 'https://x/')).searchParams.get('note'), link.note);
   assert.doesNotMatch(link.deepLink, /note=[^&]*\+/);
   assert.equal(link.profileUrl, `https://venmo.com/u/${VENMO_USERNAME}`);
