@@ -1,9 +1,9 @@
 # DukeDrop
 
-Mobile-friendly order form for DukeDrop parcel delivery, implemented from the
+Mobile-friendly order form for DukeDrop package delivery, implemented from the
 Claude Design project "App redesign requirements" (`DukeDrop.dc.html` /
 `DukeDrop-print.dc.html`). Express, Pickup, and Returns are separate tabs,
-each with its own remembered fields, tiered per-parcel pricing, and
+each with its own remembered fields, tiered per-package pricing, and
 service-specific instructions — see `docs/design-comparison.md` for the full
 inventory of what the design specifies and how this app implements it.
 

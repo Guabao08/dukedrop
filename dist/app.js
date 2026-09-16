@@ -20,46 +20,46 @@ export const SERVICE_DETAILS = {
   express: {
     eyebrow: 'Express',
     title: 'Express',
-    rateHeader: 'Parcels per order',
+    rateHeader: 'Packages per order',
     intro: "Ship to our DukeDrop address to skip the mailroom's 48-hour hold — we bring it straight to your door.",
     memoPrefix: 'EXPRESS',
     callout: '',
-    unit: 'parcel',
+    unit: 'package',
     sizeLimitNote: SIZE_LIMIT_NOTE,
     tiers: [
-      { label: '1–2 parcels · small', min: 1, max: 2, rate: 4.99, was: 5.99 },
-      { label: '3–4 parcels · medium', min: 3, max: 4, rate: 3.99, was: 4.99 },
-      { label: '5+ parcels · large', min: 5, max: Infinity, rate: 2.99, was: 3.99 },
+      { label: '1–2 packages · small', min: 1, max: 2, rate: 4.99, was: 5.99 },
+      { label: '3–4 packages · medium', min: 3, max: 4, rate: 3.99, was: 4.99 },
+      { label: '5+ packages · large', min: 5, max: Infinity, rate: 2.99, was: 3.99 },
     ],
   },
   pickup: {
     eyebrow: 'Pickup',
     title: 'Pickup',
-    rateHeader: 'Parcels per trip',
+    rateHeader: 'Packages per trip',
     intro: 'We grab it from your mailroom box or locker — third-party pickup, delivered straight to your dorm.',
     memoPrefix: 'PICKUP',
     callout: 'Mailroom pickups need your OK on file — text us the consent line before paying. Locker codes already work as consent, so lockers skip straight to paying.',
-    unit: 'parcel',
+    unit: 'package',
     sizeLimitNote: SIZE_LIMIT_NOTE,
     tiers: [
-      { label: '1–2 parcels · small', min: 1, max: 2, rate: 3.99 },
-      { label: '3–4 parcels · medium', min: 3, max: 4, rate: 2.99 },
-      { label: '5+ parcels · large', min: 5, max: Infinity, rate: 1.99 },
+      { label: '1–2 packages · small', min: 1, max: 2, rate: 3.99 },
+      { label: '3–4 packages · medium', min: 3, max: 4, rate: 2.99 },
+      { label: '5+ packages · large', min: 5, max: Infinity, rate: 1.99 },
     ],
   },
   returns: {
     eyebrow: 'Returns',
     title: 'Returns',
-    rateHeader: 'Parcels per trip',
+    rateHeader: 'Packages per trip',
     intro: 'Leave it at your door — we repack it, get it ready to ship, and drop it at the package center for you.',
     memoPrefix: 'RETURN',
     callout: "Stick your return label on the package before we pick it up — we can't ship it out without one. Your payment note carries your dorm + room — that's your authorization, nothing else to send.",
-    unit: 'parcel',
+    unit: 'package',
     sizeLimitNote: `${SIZE_LIMIT_NOTE} Big Drop applies to returns too.`,
     tiers: [
-      { label: '1–2 parcels · small', min: 1, max: 2, rate: 4.99 },
-      { label: '3–4 parcels · medium', min: 3, max: 4, rate: 3.99 },
-      { label: '5+ parcels · large', min: 5, max: Infinity, rate: 2.99 },
+      { label: '1–2 packages · small', min: 1, max: 2, rate: 4.99 },
+      { label: '3–4 packages · medium', min: 3, max: 4, rate: 3.99 },
+      { label: '5+ packages · large', min: 5, max: Infinity, rate: 2.99 },
     ],
   },
   bigdrop: {
@@ -371,7 +371,7 @@ if (typeof document !== 'undefined') {
         ${modeToggleHtml(key)}
         ${ratesHtml(key)}
         <div class="field">
-          <label>${detail.unit === 'item' ? 'Items' : 'Parcels'}</label>
+          <label>${detail.unit === 'item' ? 'Items' : 'Packages'}</label>
           <div class="stepper">
             <button type="button" data-action="qty-dec">−</button>
             <input type="text" inputmode="numeric" value="${s.qty}" data-field="qty" data-role="qty-input">

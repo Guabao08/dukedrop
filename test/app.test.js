@@ -64,8 +64,8 @@ test('Express discount metadata renders as actual whole-number savings', () => {
 
 test('Pickup and Returns have distinct copy, rate header, and prices', () => {
   assert.notEqual(SERVICE_DETAILS.pickup.intro, SERVICE_DETAILS.returns.intro);
-  assert.equal(SERVICE_DETAILS.pickup.rateHeader, 'Parcels per trip');
-  assert.equal(SERVICE_DETAILS.express.rateHeader, 'Parcels per order');
+  assert.equal(SERVICE_DETAILS.pickup.rateHeader, 'Packages per trip');
+  assert.equal(SERVICE_DETAILS.express.rateHeader, 'Packages per order');
   assert.notEqual(SERVICE_DETAILS.pickup.callout, SERVICE_DETAILS.returns.callout);
   assert.equal(SERVICE_DETAILS.express.callout, '');
 });
