@@ -19,8 +19,9 @@ test('Vercel publishes only the built frontend artifact', async () => {
     child.on('error', reject); child.on('exit', code => code === 0 ? resolve() : reject(new Error(`build exited ${code}`)));
   });
   const files = await readdir(new URL('../dist/', import.meta.url));
-  assert.deepEqual(files.sort(), ['app.js', 'faq.html', 'index.html', 'styles.css']);
+  assert.deepEqual(files.sort(), ['app.js', 'faq.html', 'index.html', 'styles.css', 'videos']);
   for (const file of files) assert.doesNotMatch(file, /server|package|test|json/);
+  assert.deepEqual((await readdir(new URL('../dist/videos/', import.meta.url))).sort(), ['duke-drop-1.mp4', 'duke-drop-2.mp4', 'duke-drop-3.mp4']);
 });
 
 test('built artifact works when served as static files', async () => {
