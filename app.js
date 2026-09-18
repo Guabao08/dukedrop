@@ -260,12 +260,8 @@ if (typeof document !== 'undefined') {
     const s = state[key];
     if (key !== 'express' && !(key === 'bigdrop' && s.mode === 'ship')) return '';
     return `
-      <div class="banner-dark">
-        <div class="banner-eyebrow">Before anything else</div>
-        <div>Ship your package to <strong>${esc(EXPRESS_ADDRESS)}</strong> — then fill out the form below. Use your own name as the recipient (not "DukeDrop") so we can match it to your order.</div>
-      </div>
-      <div class="copy-row">
-        <div class="copy-row-text">${esc(EXPRESS_ADDRESS)}</div>
+      <div class="address-box">
+        <div><strong>Ship here under your own name</strong><span>${esc(EXPRESS_ADDRESS)}</span></div>
         <button type="button" class="copy-btn" data-action="copy" data-value="${esc(EXPRESS_ADDRESS)}">Copy</button>
       </div>`;
   }
@@ -284,9 +280,8 @@ if (typeof document !== 'undefined') {
     const detail = SERVICE_DETAILS[key];
     const { index: activeIndex } = tierFor(key, state[key].qty);
     return `
-      <div class="rates" data-role="rates">
-        <div class="rate-header"><span>${esc(detail.rateHeader)}</span><span>Rate</span></div>
-        ${detail.tiers.map((t, i) => `<div class="rate-row${i === activeIndex ? ' is-active' : ''}" data-tier-index="${i}"><span>${esc(t.label)}</span><strong>${t.was ? `<span class="rate-discount">${discountPercent(t.was, t.rate)}% off</span><del>${money(t.was)}</del> <b>${money(t.rate)}</b>` : money(t.rate)}/${detail.unit}</strong>${t.was ? `<small>/${detail.unit}</small>` : ''}</div>`).join('')}
+      <div class="rates" data-role="rates" aria-label="${esc(detail.rateHeader)}">
+        ${detail.tiers.map((t, i) => `<div class="rate-row${i === activeIndex ? ' is-active' : ''}" data-tier-index="${i}"><span>${esc(t.label)}</span><strong>${t.was ? `<del>${money(t.was)}</del> <b>${money(t.rate)}</b>` : money(t.rate)}/${detail.unit}</strong>${t.was ? `<small>/${detail.unit}</small>` : ''}</div>`).join('')}
       </div>`;
   }
 
@@ -325,9 +320,8 @@ if (typeof document !== 'undefined') {
     if (!vm.showConsent) return '';
     const s = state[key];
     return `
-      <div class="step-label">Step 1 · Send pickup consent</div>
-      <p class="hint">Type your name below — it fills into the consent line, ready to text us so we have your OK on file before we grab your package.</p>
-      <label>Your full name (as it appears on the package)<input type="text" placeholder="e.g. Jane Doe" value="${esc(s.name)}" data-field="name"></label>
+      <div class="step-label">1 · Pickup consent</div>
+      <label>Full name on package<input type="text" placeholder="e.g. Jane Doe" value="${esc(s.name)}" data-field="name"></label>
       <div class="copy-row">
         <div class="copy-row-text" data-role="consent-text">${esc(vm.consentText)}</div>
         <button type="button" class="copy-btn" data-action="copy" data-value-role="consent-text">Copy</button>
@@ -335,7 +329,7 @@ if (typeof document !== 'undefined') {
       <button type="button" class="btn-primary" data-action="send-consent">Text consent to ${esc(CONSENT_PHONE)}</button>
       ${s.consentFallback ? `<div class="fallback">Messages didn't open? Copy the line above and text it to <strong>${esc(CONSENT_PHONE)}</strong>.</div>` : ''}
       <div class="ig-line">or <a href="https://instagram.com/${INSTAGRAM_HANDLE}" target="_blank" rel="noopener">DM @${INSTAGRAM_HANDLE} on Instagram</a> instead — paste the copied line into the chat</div>
-      <div class="step-label">Step 2 · Pay</div>`;
+      <div class="step-label">2 · Payment</div>`;
   }
 
   function paymentPanelHtml(key, vm) {
@@ -363,7 +357,6 @@ if (typeof document !== 'undefined') {
     return `
       <div class="card${detail.highlight ? ' card-highlight' : ''}">
         ${bannerHtml(key)}
-        <div class="eyebrow">${esc(detail.eyebrow)}</div>
         <h2>${esc(detail.title)}</h2>
         <p class="desc">${esc(detail.intro)}</p>
         ${calloutHtml(detail)}
@@ -392,10 +385,13 @@ if (typeof document !== 'undefined') {
           </div>
           <div class="total-amount" data-role="total">${money(vm.total)}</div>
         </div>
-        <div class="copy-row">
-          <div class="copy-row-text" data-role="memo">${esc(vm.memo)}</div>
-          <button type="button" class="copy-btn" data-action="copy" data-value-role="memo">Copy</button>
-        </div>
+        <details class="payment-note">
+          <summary>Payment note</summary>
+          <div class="copy-row">
+            <div class="copy-row-text" data-role="memo">${esc(vm.memo)}</div>
+            <button type="button" class="copy-btn" data-action="copy" data-value-role="memo">Copy</button>
+          </div>
+        </details>
         <div class="pay-tabs">
           <button type="button" class="tab${s.payMethod === 'venmo' ? ' active' : ''}" data-action="paymethod" data-method="venmo">Venmo</button>
           <button type="button" class="tab${s.payMethod === 'zelle' ? ' active' : ''}" data-action="paymethod" data-method="zelle">Zelle</button>
