@@ -537,17 +537,15 @@ if (typeof document !== 'undefined') {
 
   render();
 
-  // Keep three fixed video slots on screen and rotate the fourth clip through
-  // one slot at a time. This avoids sliding the entire row out of view.
+  // Slide the video track by one slot at a time, then recycle the leading
+  // clip to the back of the track so the carousel loops seamlessly.
   const videoRow = document.querySelector('.video-row');
-  const videos = [...(videoRow?.querySelectorAll('video') || [])];
-  if ('IntersectionObserver' in window && videos.length) {
-    const playlist = [1, 2, 3, 4].map((number) => `videos/duke-drop-${number}.mp4`);
-    const slotSources = [0, 1, 2];
-    let queuedSource = 3;
-    let nextSlot = 0;
+  const track = videoRow?.querySelector('.video-track');
+  const videos = [...(track?.querySelectorAll('video') || [])];
+  if ('IntersectionObserver' in window && track && videos.length > 1) {
     let timer;
     let sectionVisible = false;
+    let sliding = false;
 
     const videoObserver = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
@@ -558,21 +556,20 @@ if (typeof document !== 'undefined') {
     videos.forEach((video) => videoObserver.observe(video));
 
     const rotate = () => {
-      const video = videos[nextSlot];
-      const outgoingSource = slotSources[nextSlot];
-      const incomingSource = queuedSource;
-      video.classList.add('is-changing');
-      setTimeout(() => {
-        video.querySelector('source').src = playlist[incomingSource];
-        video.setAttribute('aria-label', `DukeDrop video ${incomingSource + 1}`);
-        video.load();
-        if (sectionVisible) video.play().catch(() => {});
-        slotSources[nextSlot] = incomingSource;
-        queuedSource = outgoingSource;
-        nextSlot = (nextSlot + 1) % videos.length;
-        requestAnimationFrame(() => video.classList.remove('is-changing'));
-      }, 250);
+      if (sliding) return;
+      sliding = true;
+      const gap = parseFloat(getComputedStyle(track).columnGap) || 0;
+      const slot = track.firstElementChild.getBoundingClientRect().width + gap;
+      track.style.transition = 'transform .6s cubic-bezier(.4,0,.2,1)';
+      track.style.transform = `translateX(-${slot}px)`;
     };
+    track.addEventListener('transitionend', (e) => {
+      if (e.propertyName !== 'transform') return;
+      track.style.transition = 'none';
+      track.appendChild(track.firstElementChild);
+      track.style.transform = 'translateX(0)';
+      sliding = false;
+    });
     const start = () => {
       if (sectionVisible && !document.hidden && !timer && !matchMedia('(prefers-reduced-motion: reduce)').matches) timer = setInterval(rotate, 3500);
     };
@@ -586,6 +583,8 @@ if (typeof document !== 'undefined') {
     videoRow.addEventListener('mouseleave', start);
     videoRow.addEventListener('focusin', stop);
     videoRow.addEventListener('focusout', start);
+    videoRow.addEventListener('touchstart', stop, { passive: true });
+    videoRow.addEventListener('touchend', start);
     document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
   }
 }
