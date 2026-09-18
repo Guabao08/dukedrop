@@ -46,7 +46,8 @@ hand-ported into `app.js` instead.
 ## Deploy to Vercel
 
 DukeDrop is a static site. `npm run build` runs the tests and creates `dist/`
-containing only `index.html`, `app.js`, and `styles.css`. Vercel is
+containing only `index.html`, `faq.html`, `app.js`, `styles.css`, and
+`videos/`. Vercel is
 configured in `vercel.json` with:
 
 - Framework preset: **Other**
