@@ -157,6 +157,11 @@ export function buildConsent(name, mailroom) {
   return `PICKUP CONSENT — I, ${name || '[Full name]'}, authorize ${CONSENT_AUTHORIZERS} to retrieve my package from the ${mailroom || '[Mailroom]'} mailroom.`;
 }
 
+export function smsLink(phone, body, isIOS = false) {
+  const separator = isIOS ? '&' : '?';
+  return `sms:${phone}${separator}body=${encodeURIComponent(body)}`;
+}
+
 export function validateOrder(o) {
   const missing = [];
   if (!SERVICE_DETAILS[o.service]) missing.push('service');
@@ -209,7 +214,7 @@ if (typeof document !== 'undefined') {
 
   const makeServiceState = (service) => ({
     qty: 1, dorm: '', room: '', carrier: '', tracking: '', payMethod: 'venmo',
-    ...(service === 'pickup' || service === 'bigdrop' ? { source: 'mailbox', mailroom: '', box: '', lockerLocation: '', locker: '', name: '', consentFallback: false } : {}),
+    ...(service === 'pickup' || service === 'bigdrop' ? { source: 'mailbox', mailroom: '', box: '', lockerLocation: '', locker: '', name: '' } : {}),
     ...(service === 'bigdrop' ? { mode: 'ship' } : {}),
   });
 
@@ -326,9 +331,8 @@ if (typeof document !== 'undefined') {
         <div class="copy-row-text" data-role="consent-text">${esc(vm.consentText)}</div>
         <button type="button" class="copy-btn" data-action="copy" data-value-role="consent-text">Copy</button>
       </div>
-      <button type="button" class="btn-primary" data-action="send-consent">Text consent to ${esc(CONSENT_PHONE)}</button>
-      ${s.consentFallback ? `<div class="fallback">Messages didn't open? Copy the line above and text it to <strong>${esc(CONSENT_PHONE)}</strong>.</div>` : ''}
-      <div class="ig-line">or <a href="https://instagram.com/${INSTAGRAM_HANDLE}" target="_blank" rel="noopener">DM @${INSTAGRAM_HANDLE} on Instagram</a> instead — paste the copied line into the chat</div>
+      <a class="btn-primary" href="${esc(smsLink(CONSENT_PHONE, vm.consentText, /iPhone|iPad|iPod/.test(navigator.userAgent)))}">Text consent to ${esc(CONSENT_PHONE)}</a>
+      <div class="ig-line">If Messages doesn't open, copy the line above and text <strong>${esc(CONSENT_PHONE)}</strong>, or <a href="https://instagram.com/${INSTAGRAM_HANDLE}" target="_blank" rel="noopener">DM @${INSTAGRAM_HANDLE}</a>.</div>
       <div class="step-label">2 · Payment</div>`;
   }
 
@@ -423,6 +427,13 @@ if (typeof document !== 'undefined') {
     const memo = card.querySelector('[data-role="memo"]'); if (memo) memo.textContent = vm.memo;
     const consentText = card.querySelector('[data-role="consent-text"]'); if (consentText) consentText.textContent = vm.consentText;
     const zelleLineEl = card.querySelector('[data-role="zelle-line"]'); if (zelleLineEl) zelleLineEl.textContent = vm.zelleLine;
+    const consentLink = card.querySelector('a.btn-primary[href^="sms:"]');
+    if (consentLink) consentLink.href = smsLink(CONSENT_PHONE, vm.consentText, /iPhone|iPad|iPod/.test(navigator.userAgent));
+
+    // Tracking edits can change the number and value of payment requests, so
+    // refresh this isolated panel while leaving the active form input alone.
+    const paymentPanel = card.querySelector('[data-role="payment-panel"]');
+    if (paymentPanel) paymentPanel.innerHTML = paymentPanelHtml(key, vm);
 
     const missing = card.querySelector('[data-role="missing"]');
     if (vm.ready && missing) missing.remove();
@@ -440,14 +451,6 @@ if (typeof document !== 'undefined') {
     const qtyInput = card.querySelector('[data-role="qty-input"]');
     if (qtyInput) qtyInput.value = String(state[key].qty);
 
-    const payBtn = card.querySelector('[data-action="pay-venmo"], [data-action="pay-zelle"]');
-    if (payBtn) {
-      payBtn.disabled = !vm.ready;
-      const method = state[key].payMethod;
-      payBtn.textContent = method === 'venmo'
-        ? (vm.ready ? `Pay ${money(vm.total)} with Venmo` : 'Enter details to pay')
-        : (vm.ready ? `Pay ${money(vm.total)} with Zelle` : 'Enter details to pay with Zelle');
-    }
   }
 
   function setField(key, field, value) {
@@ -500,14 +503,6 @@ if (typeof document !== 'undefined') {
         el.textContent = 'Copied';
         setTimeout(() => { el.textContent = original; }, 1500);
       });
-      return;
-    }
-    if (action === 'send-consent') {
-      const vm = buildVM(key);
-      const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
-      const sep = isIOS ? '&' : '?';
-      try { window.location.href = `sms:${CONSENT_PHONE}${sep}body=${encodeURIComponent(vm.consentText)}`; } catch { /* sms handoff unsupported here */ }
-      setTimeout(() => { state.pickup.consentFallback = true; render(); }, 1200);
       return;
     }
     if (action === 'pay-venmo') {

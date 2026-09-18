@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import {
-  SERVICE_DETAILS, VENMO_USERNAME, ZELLE_DISPLAY, EXPRESS_ADDRESS,
-  calculateAmount, tierFor, normalizeTrackingNumbers, buildMemo, buildConsent, validateOrder, venmoLink, zelleLine, splitPaymentRequests, PAYMENT_MEMO_MAX_LENGTH, discountPercent, isPickupStyle,
+  SERVICE_DETAILS, VENMO_USERNAME, ZELLE_DISPLAY, EXPRESS_ADDRESS, CONSENT_PHONE,
+  calculateAmount, tierFor, normalizeTrackingNumbers, buildMemo, buildConsent, smsLink, validateOrder, venmoLink, zelleLine, splitPaymentRequests, PAYMENT_MEMO_MAX_LENGTH, discountPercent, isPickupStyle,
 } from '../app.js';
 
 const root = new URL('../', import.meta.url);
@@ -34,6 +34,10 @@ test('built artifact works when served as static files', async () => {
     assert.ok(response, 'static server did not start');
     assert.equal(response.status, 200);
     assert.match(await response.text(), /DukeDrop/);
+    for (const path of ['faq.html', 'videos/duke-drop-1.mp4', 'videos/duke-drop-2.mp4', 'videos/duke-drop-3.mp4']) {
+      const asset = await fetch(`http://127.0.0.1:4174/${path}`);
+      assert.equal(asset.status, 200, `${path} should be published`);
+    }
   } finally { server.kill(); }
 });
 
@@ -112,6 +116,15 @@ test('memo shows bracket placeholders for missing fields instead of disappearing
 test('pickup consent text authorizes the named runners for the given mailroom', () => {
   assert.match(buildConsent('Jane Doe', 'Few Quad'), /^PICKUP CONSENT — I, Jane Doe, authorize Sean Pao, Dylan Kim, or Timothy Mei to retrieve my package from the Few Quad mailroom\.$/);
   assert.match(buildConsent('', ''), /\[Full name\].*\[Mailroom\]/);
+});
+
+test('consent SMS links address Messages and preserve the complete consent text', () => {
+  const consent = buildConsent('Jane Doe', 'Few Quad');
+  for (const isIOS of [false, true]) {
+    const link = smsLink(CONSENT_PHONE, consent, isIOS);
+    assert.ok(link.startsWith(`sms:${CONSENT_PHONE}${isIOS ? '&' : '?'}body=`));
+    assert.equal(decodeURIComponent(link.split('body=')[1]), consent);
+  }
 });
 
 test('Venmo link preserves ordered fields and mobile-safe note encoding', () => {
