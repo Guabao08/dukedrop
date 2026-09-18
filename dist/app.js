@@ -541,4 +541,17 @@ if (typeof document !== 'undefined') {
   });
 
   render();
+
+  // Muted inline video can autoplay once it is meaningfully on screen. Pause
+  // off-screen clips so the row does not consume bandwidth or battery unseen.
+  const videos = document.querySelectorAll('.video-row video');
+  if ('IntersectionObserver' in window && videos.length) {
+    const videoObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) entry.target.play().catch(() => {});
+        else entry.target.pause();
+      });
+    }, { threshold: 0.45 });
+    videos.forEach((video) => videoObserver.observe(video));
+  }
 }
