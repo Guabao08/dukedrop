@@ -537,13 +537,18 @@ if (typeof document !== 'undefined') {
 
   render();
 
-  // Play visible clips and rotate the four-video track while its section is in
-  // view. Moving the first clip to the end after each transition keeps three
-  // videos continuously visible without a jump back to the beginning.
+  // Keep three fixed video slots on screen and rotate the fourth clip through
+  // one slot at a time. This avoids sliding the entire row out of view.
   const videoRow = document.querySelector('.video-row');
-  const videoTrack = videoRow?.querySelector('.video-track');
-  const videos = videoTrack?.querySelectorAll('video') || [];
+  const videos = [...(videoRow?.querySelectorAll('video') || [])];
   if ('IntersectionObserver' in window && videos.length) {
+    const playlist = [1, 2, 3, 4].map((number) => `videos/duke-drop-${number}.mp4`);
+    const slotSources = [0, 1, 2];
+    let queuedSource = 3;
+    let nextSlot = 0;
+    let timer;
+    let sectionVisible = false;
+
     const videoObserver = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) entry.target.play().catch(() => {});
@@ -552,25 +557,24 @@ if (typeof document !== 'undefined') {
     }, { threshold: 0.45 });
     videos.forEach((video) => videoObserver.observe(video));
 
-    let timer;
-    let moving = false;
-    let sectionVisible = false;
-    const advance = () => {
-      if (moving || !videoTrack.firstElementChild) return;
-      moving = true;
-      const gap = parseFloat(getComputedStyle(videoTrack).gap) || 0;
-      const distance = videoTrack.firstElementChild.getBoundingClientRect().width + gap;
-      videoTrack.style.transition = 'transform .6s ease';
-      videoTrack.style.transform = `translateX(-${distance}px)`;
+    const rotate = () => {
+      const video = videos[nextSlot];
+      const outgoingSource = slotSources[nextSlot];
+      const incomingSource = queuedSource;
+      video.classList.add('is-changing');
+      setTimeout(() => {
+        video.querySelector('source').src = playlist[incomingSource];
+        video.setAttribute('aria-label', `DukeDrop video ${incomingSource + 1}`);
+        video.load();
+        if (sectionVisible) video.play().catch(() => {});
+        slotSources[nextSlot] = incomingSource;
+        queuedSource = outgoingSource;
+        nextSlot = (nextSlot + 1) % videos.length;
+        requestAnimationFrame(() => video.classList.remove('is-changing'));
+      }, 250);
     };
-    videoTrack.addEventListener('transitionend', () => {
-      videoTrack.append(videoTrack.firstElementChild);
-      videoTrack.style.transition = 'none';
-      videoTrack.style.transform = 'translateX(0)';
-      moving = false;
-    });
     const start = () => {
-      if (sectionVisible && !document.hidden && !timer && !matchMedia('(prefers-reduced-motion: reduce)').matches) timer = setInterval(advance, 3500);
+      if (sectionVisible && !document.hidden && !timer && !matchMedia('(prefers-reduced-motion: reduce)').matches) timer = setInterval(rotate, 3500);
     };
     const stop = () => { clearInterval(timer); timer = undefined; };
     const sectionObserver = new IntersectionObserver(([entry]) => {
