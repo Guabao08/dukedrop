@@ -19,7 +19,7 @@ test('Vercel publishes only the built frontend artifact', async () => {
     child.on('error', reject); child.on('exit', code => code === 0 ? resolve() : reject(new Error(`build exited ${code}`)));
   });
   const files = await readdir(new URL('../dist/', import.meta.url));
-  assert.deepEqual(files.sort(), ['app.js', 'index.html', 'styles.css']);
+  assert.deepEqual(files.sort(), ['app.js', 'faq.html', 'index.html', 'styles.css']);
   for (const file of files) assert.doesNotMatch(file, /server|package|test|json/);
 });
 
