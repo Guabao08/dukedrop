@@ -537,9 +537,12 @@ if (typeof document !== 'undefined') {
 
   render();
 
-  // Muted inline video can autoplay once it is meaningfully on screen. Pause
-  // off-screen clips so the row does not consume bandwidth or battery unseen.
-  const videos = document.querySelectorAll('.video-row video');
+  // Play visible clips and rotate the four-video track while its section is in
+  // view. Moving the first clip to the end after each transition keeps three
+  // videos continuously visible without a jump back to the beginning.
+  const videoRow = document.querySelector('.video-row');
+  const videoTrack = videoRow?.querySelector('.video-track');
+  const videos = videoTrack?.querySelectorAll('video') || [];
   if ('IntersectionObserver' in window && videos.length) {
     const videoObserver = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
@@ -548,5 +551,37 @@ if (typeof document !== 'undefined') {
       });
     }, { threshold: 0.45 });
     videos.forEach((video) => videoObserver.observe(video));
+
+    let timer;
+    let moving = false;
+    let sectionVisible = false;
+    const advance = () => {
+      if (moving || !videoTrack.firstElementChild) return;
+      moving = true;
+      const gap = parseFloat(getComputedStyle(videoTrack).gap) || 0;
+      const distance = videoTrack.firstElementChild.getBoundingClientRect().width + gap;
+      videoTrack.style.transition = 'transform .6s ease';
+      videoTrack.style.transform = `translateX(-${distance}px)`;
+    };
+    videoTrack.addEventListener('transitionend', () => {
+      videoTrack.append(videoTrack.firstElementChild);
+      videoTrack.style.transition = 'none';
+      videoTrack.style.transform = 'translateX(0)';
+      moving = false;
+    });
+    const start = () => {
+      if (sectionVisible && !document.hidden && !timer && !matchMedia('(prefers-reduced-motion: reduce)').matches) timer = setInterval(advance, 3500);
+    };
+    const stop = () => { clearInterval(timer); timer = undefined; };
+    const sectionObserver = new IntersectionObserver(([entry]) => {
+      sectionVisible = entry.isIntersecting;
+      sectionVisible ? start() : stop();
+    }, { threshold: 0.15 });
+    sectionObserver.observe(videoRow);
+    videoRow.addEventListener('mouseenter', stop);
+    videoRow.addEventListener('mouseleave', start);
+    videoRow.addEventListener('focusin', stop);
+    videoRow.addEventListener('focusout', start);
+    document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
   }
 }

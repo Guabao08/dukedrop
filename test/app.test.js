@@ -21,7 +21,7 @@ test('Vercel publishes only the built frontend artifact', async () => {
   const files = await readdir(new URL('../dist/', import.meta.url));
   assert.deepEqual(files.sort(), ['app.js', 'faq.html', 'index.html', 'styles.css', 'videos']);
   for (const file of files) assert.doesNotMatch(file, /server|package|test|json/);
-  assert.deepEqual((await readdir(new URL('../dist/videos/', import.meta.url))).sort(), ['duke-drop-1.mp4', 'duke-drop-2.mp4', 'duke-drop-3.mp4']);
+  assert.deepEqual((await readdir(new URL('../dist/videos/', import.meta.url))).sort(), ['duke-drop-1.mp4', 'duke-drop-2.mp4', 'duke-drop-3.mp4', 'duke-drop-4.mp4']);
 });
 
 test('built artifact works when served as static files', async () => {
@@ -34,7 +34,7 @@ test('built artifact works when served as static files', async () => {
     assert.ok(response, 'static server did not start');
     assert.equal(response.status, 200);
     assert.match(await response.text(), /DukeDrop/);
-    for (const path of ['faq.html', 'videos/duke-drop-1.mp4', 'videos/duke-drop-2.mp4', 'videos/duke-drop-3.mp4']) {
+    for (const path of ['faq.html', 'videos/duke-drop-1.mp4', 'videos/duke-drop-2.mp4', 'videos/duke-drop-3.mp4', 'videos/duke-drop-4.mp4']) {
       const asset = await fetch(`http://127.0.0.1:4174/${path}`);
       assert.equal(asset.status, 200, `${path} should be published`);
     }
