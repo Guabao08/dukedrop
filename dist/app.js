@@ -349,7 +349,7 @@ if (typeof document !== 'undefined') {
     if (method === 'zelle') {
       const label = vm.ready ? `Pay ${money(vm.total)} with Zelle` : 'Enter details to pay with Zelle';
       return `${requestSummary || `<button type="button" class="btn-pay" data-action="pay-zelle" ${vm.ready ? '' : 'disabled'}>${label}</button>`}
-        ${state.zelleFallback[key] ? `<div class="fallback">Note copied. Open your bank's app and send to <strong>${esc(ZELLE_DISPLAY)}</strong> — paste the note below if your bank allows one:<div class="fallback-mono" data-role="zelle-line">${esc(vm.zelleLine)}</div></div>` : ''}`;
+        ${state.zelleFallback[key] ? `<div class="fallback fallback-copied"><strong class="copied-flag">Note copied to clipboard</strong>Open your bank's app and send to <strong>${esc(ZELLE_DISPLAY)}</strong> — paste the note below if your bank allows one:<div class="fallback-mono" data-role="zelle-line">${esc(vm.zelleLine)}</div></div>` : ''}`;
     }
     return `<div class="card-note">Card payments are launching soon — please use Venmo or Zelle for now.</div>`;
   }
