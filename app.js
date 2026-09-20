@@ -206,7 +206,7 @@ export function venmoLink(o, request) {
 
 export function zelleLine(o, request) {
   const payment = request || splitPaymentRequests(o)[0];
-  return `$${payment.amount} to ${ZELLE_DISPLAY} — ${payment.memo}`;
+  return payment.memo;
 }
 
 if (typeof document !== 'undefined') {

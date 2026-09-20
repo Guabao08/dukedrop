@@ -141,11 +141,10 @@ test('Venmo link throws with the missing fields when the order is incomplete', (
   assert.throws(() => venmoLink({ service: 'express', quantity: 1, dorm: '', room: '', tracking: '' }), /Missing: dorm, room #, carrier, tracking\/order #/);
 });
 
-test('Zelle line carries the amount, recipient, and full memo for a manual send/request — never a payment claim', () => {
+test('Zelle line is just the bare memo — no amount or recipient — so pasting it never claims a payment', () => {
   const line = zelleLine({ service: 'returns', quantity: 1, dorm: 'Few', room: '4', tracking: 'T' });
-  const amount = calculateAmount('returns', 1).toFixed(2);
-  assert.equal(line, `$${amount} to ${ZELLE_DISPLAY} — RETURN 1x — Few 4`);
-  assert.doesNotMatch(line, /paid|confirmed|complete/i);
+  assert.equal(line, 'RETURN 1x — Few 4');
+  assert.doesNotMatch(line, /paid|confirmed|complete|\$|to \(/i);
 });
 
 test('Returns memo never contains tracking details', () => {
