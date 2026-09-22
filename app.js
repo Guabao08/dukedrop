@@ -542,18 +542,35 @@ if (typeof document !== 'undefined') {
   const videoRow = document.querySelector('.video-row');
   const track = videoRow?.querySelector('.video-track');
   const videos = [...(track?.querySelectorAll('video') || [])];
-  if ('IntersectionObserver' in window && track && videos.length > 1) {
+  if ('IntersectionObserver' in window && track && videos.length > 0) {
     let timer;
     let sectionVisible = false;
     let sliding = false;
     const manualCarousel = matchMedia('(max-width: 520px), (pointer: coarse)');
 
+    const visibleVideos = new Set();
+    // Set the media properties explicitly before play(), including on iOS.
+    videos.forEach((video) => {
+      video.muted = true;
+      video.defaultMuted = true;
+      video.playsInline = true;
+    });
+    const playVisibleVideos = () => {
+      visibleVideos.forEach((video) => {
+        if (!document.hidden) video.play().catch(() => {});
+      });
+    };
     const videoObserver = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
-        if (entry.isIntersecting) entry.target.play().catch(() => {});
-        else entry.target.pause();
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.25) {
+          visibleVideos.add(entry.target);
+        } else {
+          visibleVideos.delete(entry.target);
+          entry.target.pause();
+        }
       });
-    }, { threshold: 0.45 });
+      playVisibleVideos();
+    }, { threshold: [0, 0.25] });
     videos.forEach((video) => videoObserver.observe(video));
 
     const rotate = () => {
@@ -594,6 +611,14 @@ if (typeof document !== 'undefined') {
     videoRow.addEventListener('focusout', start);
     videoRow.addEventListener('touchstart', stop, { passive: true });
     videoRow.addEventListener('touchend', start);
-    document.addEventListener('visibilitychange', () => document.hidden ? stop() : start());
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        stop();
+        videos.forEach((video) => video.pause());
+      } else {
+        playVisibleVideos();
+        start();
+      }
+    });
   }
 }
