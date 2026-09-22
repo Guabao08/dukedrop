@@ -105,3 +105,41 @@ textarea{min-height:64px;resize:vertical}
 .btn-link{display:inline-block;white-space:nowrap;background:#fff;color:var(--ink);font-weight:800;text-decoration:none;padding:11px 16px;border-radius:999px}
 .info-page .fine{margin-bottom:28px}
 @media(max-width:520px){header small{display:none}.hero{border-radius:0 0 28px 28px}.hero h1{font-size:36px}.field-grid{grid-template-columns:1fr}main #app{margin:-28px 10px 0}.card{padding:22px 17px;border-radius:20px}.top-nav a{padding:7px 8px}.page-cta{align-items:flex-start;flex-direction:column}.video-strip{margin-top:42px;padding:0}.section-heading{padding:0 20px}.video-row{padding:0 20px 12px}.video-track{gap:10px}.video-track video{flex:0 0 calc(100vw - 40px);border-radius:18px}}
+
+/* Keep intrinsic field and payment-note widths inside narrow screens. */
+.field-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.field-grid>*{min-width:0}
+.address-box>div,.copy-row-text{min-width:0;overflow-wrap:anywhere}
+.payment-request,.fallback-mono,.fallback{overflow-wrap:anywhere}
+.rate-row{gap:8px;flex-wrap:wrap}
+.rate-row strong{margin-left:auto}
+input,textarea{min-width:0;font-size:16px}
+button,a,input,textarea,summary{touch-action:manipulation}
+.tab,.copy-btn,.top-nav a{min-height:44px}
+.top-nav a{display:inline-flex;align-items:center}
+.stepper button{width:44px;height:44px}
+.stepper input{height:44px}
+.field-hint{display:block;margin-top:6px;line-height:1.4;letter-spacing:normal;text-transform:none}
+@media(max-width:520px){
+  .field-grid{grid-template-columns:minmax(0,1fr)}
+  header{padding:14px 16px}
+  .hero{padding:34px 20px 64px}
+  .hero h1{font-size:clamp(30px,9vw,36px)}
+  .tabs{gap:2px}
+  .tabs .tab{min-width:0;padding-inline:4px;font-size:11px}
+  .tab-badge{right:0}
+  .address-box{padding:12px;gap:10px;align-items:flex-start}
+  .copy-row{align-items:flex-start;padding:11px;gap:8px}
+  .total-row{gap:12px;flex-wrap:wrap}
+  .info-page{padding:20px 16px 0}
+}
+/* Native scrolling keeps every clip reachable and leaves video controls usable. */
+@media(max-width:520px),(pointer:coarse){
+  .video-row{overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding-inline:20px}
+  .video-track{transform:none!important;transition:none!important}
+  .video-track video{scroll-snap-align:start}
+}
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .video-track{transition:none}
+}

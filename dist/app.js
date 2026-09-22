@@ -546,6 +546,7 @@ if (typeof document !== 'undefined') {
     let timer;
     let sectionVisible = false;
     let sliding = false;
+    const manualCarousel = matchMedia('(max-width: 520px), (pointer: coarse)');
 
     const videoObserver = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
@@ -556,7 +557,7 @@ if (typeof document !== 'undefined') {
     videos.forEach((video) => videoObserver.observe(video));
 
     const rotate = () => {
-      if (sliding) return;
+      if (sliding || manualCarousel.matches) return;
       sliding = true;
       const gap = parseFloat(getComputedStyle(track).columnGap) || 0;
       const slot = track.firstElementChild.getBoundingClientRect().width + gap;
@@ -571,9 +572,17 @@ if (typeof document !== 'undefined') {
       sliding = false;
     });
     const start = () => {
-      if (sectionVisible && !document.hidden && !timer && !matchMedia('(prefers-reduced-motion: reduce)').matches) timer = setInterval(rotate, 3500);
+      if (sectionVisible && !document.hidden && !timer && !manualCarousel.matches && !matchMedia('(prefers-reduced-motion: reduce)').matches) timer = setInterval(rotate, 3500);
     };
     const stop = () => { clearInterval(timer); timer = undefined; };
+    manualCarousel.addEventListener('change', () => {
+      stop();
+      track.style.transition = 'none';
+      track.style.transform = 'translateX(0)';
+      sliding = false;
+      videoRow.scrollLeft = 0;
+      start();
+    });
     const sectionObserver = new IntersectionObserver(([entry]) => {
       sectionVisible = entry.isIntersecting;
       sectionVisible ? start() : stop();
