@@ -220,6 +220,7 @@ if (typeof document !== 'undefined') {
 
   const state = {
     active: 'express',
+    promoCode: '',
     express: makeServiceState('express'),
     pickup: makeServiceState('pickup'),
     returns: makeServiceState('returns'),
@@ -382,6 +383,10 @@ if (typeof document !== 'undefined') {
         ${sourceToggleHtml(key)}
         ${key !== 'returns' ? `<div class="field-grid"><label>Carrier (required)<input type="text" placeholder="e.g. UPS, USPS, FedEx, DHL" value="${esc(s.carrier)}" data-field="carrier"></label><label>Tracking/order numbers (required)<span class="field-hint">One number per line — add several if needed.</span><textarea rows="3" placeholder="Enter one number per line" data-field="tracking">${esc(s.tracking)}</textarea></label></div>` : ''}
         ${consentHtml(key, vm)}
+        <label>Promo code (optional)
+          <input type="text" placeholder="Enter promo code" value="${esc(state.promoCode)}" data-field="promoCode" maxlength="64" autocapitalize="characters" autocorrect="off" spellcheck="false" aria-describedby="promo-code-hint">
+          <span class="field-hint" id="promo-code-hint">Promo discounts are coming soon. Entering a code won’t change your total yet.</span>
+        </label>
         <div class="total-row">
           <div>
             <div class="total-label">Total due</div>
@@ -529,6 +534,7 @@ if (typeof document !== 'undefined') {
   app.addEventListener('input', (e) => {
     const field = e.target.dataset.field;
     if (!field) return;
+    if (field === 'promoCode') { state.promoCode = e.target.value; return; }
     const key = state.active;
     if (field === 'qty') { setQty(key, e.target.value); updateDerived(); return; }
     setField(key, field, e.target.value);
