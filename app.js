@@ -13,6 +13,7 @@ export const INSTAGRAM_HANDLE = 'dukedrop_';
 // Zelle has no single network-wide memo limit (banks vary), so we use this
 // documented Venmo limit for both paths to guarantee copy/paste parity.
 export const PAYMENT_MEMO_MAX_LENGTH = 280;
+export const PROMO_CODES = { AUSTIN20: 20 };
 
 export const SIZE_LIMIT_NOTE = "Size limit: nothing bigger than a mini microwave. Bigger than that — furniture, TVs, chairs, and the like — goes through Big Drop instead.";
 
@@ -83,6 +84,16 @@ export function discountPercent(was, now) {
   return Math.round((1 - now / was) * 100);
 }
 
+export function promoDiscountPercent(code) {
+  return PROMO_CODES[String(code ?? '').trim().toUpperCase()] || 0;
+}
+
+export function calculateOrderTotal(service, quantity, promoCode = '') {
+  const subtotal = Math.round(calculateAmount(service, quantity) * 100);
+  const percent = promoDiscountPercent(promoCode);
+  return Math.round(subtotal * (100 - percent) / 100) / 100;
+}
+
 // Tracking/order numbers are entered one per line. Keep identifier characters
 // intact while making whitespace and accidental duplicate entries harmless.
 export function normalizeTrackingNumbers(value) {
@@ -129,7 +140,7 @@ export function buildMemo({ service, quantity, dorm, room, carrier, tracking, so
 }
 
 export function splitPaymentRequests(o) {
-  const totalCents = Math.round(calculateAmount(o.service, o.quantity) * 100);
+  const totalCents = Math.round(calculateOrderTotal(o.service, o.quantity, o.promoCode) * 100);
   const identifiers = o.service === 'returns' ? [] : normalizeTrackingNumbers(o.tracking);
   const chunks = [];
   for (const identifier of identifiers) {
@@ -233,7 +244,7 @@ if (typeof document !== 'undefined') {
 
   function order(key) {
     const s = state[key];
-    return { service: key, quantity: s.qty, dorm: s.dorm, room: s.room, carrier: s.carrier, tracking: s.tracking, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name, mode: s.mode };
+    return { service: key, quantity: s.qty, dorm: s.dorm, room: s.room, carrier: s.carrier, tracking: s.tracking, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name, mode: s.mode, promoCode: state.promoCode };
   }
 
   function buildVM(key) {
@@ -241,14 +252,17 @@ if (typeof document !== 'undefined') {
     const detail = SERVICE_DETAILS[key];
     const o = order(key);
     const { tier, index: tierIndex } = tierFor(key, s.qty);
-    const total = tier.rate * s.qty;
+    const subtotal = tier.rate * s.qty;
+    const promoPercent = promoDiscountPercent(state.promoCode);
+    const total = calculateOrderTotal(key, s.qty, state.promoCode);
     const v = validateOrder(o);
     const pickupStyle = isPickupStyle(key, s.mode);
     const isLocker = pickupStyle && s.source === 'locker';
     const showConsent = pickupStyle && !isLocker;
     const consentText = showConsent ? buildConsent(s.name, s.mailroom) : '';
     return {
-      key, detail, tierIndex, total, subText: `${s.qty} × ${money(tier.rate)}`,
+      key, detail, tierIndex, total, subText: promoPercent ? `${s.qty} × ${money(tier.rate)} · ${promoPercent}% off (${money(subtotal)} → ${money(total)})` : `${s.qty} × ${money(tier.rate)}`,
+      promoPercent, promoEntered: state.promoCode.trim(),
       memo: buildMemo(o), ready: v.valid, missing: v.missing,
       isLocker, showConsent, consentText, pickupStyle,
       requests: (() => { try { return splitPaymentRequests(o); } catch { return []; } })(),
@@ -257,9 +271,15 @@ if (typeof document !== 'undefined') {
   }
 
   function tabsHtml() {
-    return ['express', 'pickup', 'returns', 'bigdrop'].map((k) =>
-      `<button type="button" class="tab${state.active === k ? ' active' : ''}${SERVICE_DETAILS[k].highlight ? ' tab-highlight' : ''}" data-action="tab" data-service="${k}">${SERVICE_DETAILS[k].title}${SERVICE_DETAILS[k].highlight ? '<span class="tab-badge">New</span>' : ''}</button>`
-    ).join('');
+    const isBigDrop = state.active === 'bigdrop';
+    return `
+      <div class="tabs" aria-label="Order type">
+        <button type="button" class="tab${!isBigDrop ? ' active' : ''}" data-action="order-type" data-type="normal">Normal Order</button>
+        <button type="button" class="tab${isBigDrop ? ' active' : ''}" data-action="order-type" data-type="bigdrop">Big Drop Order</button>
+      </div>
+      ${!isBigDrop ? `<div class="tabs service-tabs" aria-label="Normal order service">${['express', 'pickup', 'returns'].map((k) =>
+        `<button type="button" class="tab${state.active === k ? ' active' : ''}" data-action="tab" data-service="${k}">${SERVICE_DETAILS[k].title}</button>`
+      ).join('')}</div>` : ''}`;
   }
 
   function bannerHtml(key) {
@@ -385,7 +405,7 @@ if (typeof document !== 'undefined') {
         ${consentHtml(key, vm)}
         <label>Promo code (optional)
           <input type="text" placeholder="Enter promo code" value="${esc(state.promoCode)}" data-field="promoCode" maxlength="64" autocapitalize="characters" autocorrect="off" spellcheck="false" aria-describedby="promo-code-hint">
-          <span class="field-hint" id="promo-code-hint">Promo discounts are coming soon. Entering a code won’t change your total yet.</span>
+          <span class="field-hint" id="promo-code-hint" data-role="promo-hint">${vm.promoEntered ? (vm.promoPercent ? `Austin20 applied: ${vm.promoPercent}% off your order.` : 'That promo code isn’t recognized.') : 'Try code Austin20 for 20% off your order.'}</span>
         </label>
         <div class="total-row">
           <div>
@@ -413,7 +433,7 @@ if (typeof document !== 'undefined') {
 
   function render() {
     const key = state.active;
-    app.innerHTML = `<div class="tabs">${tabsHtml()}</div>${cardHtml(key)}`;
+    app.innerHTML = `${tabsHtml()}${cardHtml(key)}`;
   }
 
   // Cheap refresh of computed text/attributes without touching input elements,
@@ -429,6 +449,8 @@ if (typeof document !== 'undefined') {
     });
     const total = card.querySelector('[data-role="total"]'); if (total) total.textContent = money(vm.total);
     const sub = card.querySelector('[data-role="subtext"]'); if (sub) sub.textContent = vm.subText;
+    const promoHint = card.querySelector('[data-role="promo-hint"]');
+    if (promoHint) promoHint.textContent = vm.promoEntered ? (vm.promoPercent ? `Austin20 applied: ${vm.promoPercent}% off your order.` : 'That promo code isn’t recognized.') : 'Try code Austin20 for 20% off your order.';
     const memo = card.querySelector('[data-role="memo"]'); if (memo) memo.textContent = vm.memo;
     const consentText = card.querySelector('[data-role="consent-text"]'); if (consentText) consentText.textContent = vm.consentText;
     const zelleLineEl = card.querySelector('[data-role="zelle-line"]'); if (zelleLineEl) zelleLineEl.textContent = vm.zelleLine;
@@ -493,6 +515,7 @@ if (typeof document !== 'undefined') {
     const key = state.active;
     const action = el.dataset.action;
 
+    if (action === 'order-type') { state.active = el.dataset.type === 'bigdrop' ? 'bigdrop' : 'express'; render(); return; }
     if (action === 'tab') { state.active = el.dataset.service; render(); return; }
     if (action === 'source') { state[key].source = el.dataset.source; render(); return; }
     if (action === 'mode') { state[key].mode = el.dataset.mode; render(); return; }
@@ -534,7 +557,7 @@ if (typeof document !== 'undefined') {
   app.addEventListener('input', (e) => {
     const field = e.target.dataset.field;
     if (!field) return;
-    if (field === 'promoCode') { state.promoCode = e.target.value; return; }
+    if (field === 'promoCode') { state.promoCode = e.target.value; updateDerived(); return; }
     const key = state.active;
     if (field === 'qty') { setQty(key, e.target.value); updateDerived(); return; }
     setField(key, field, e.target.value);

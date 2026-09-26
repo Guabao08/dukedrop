@@ -4,7 +4,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import {
   SERVICE_DETAILS, VENMO_USERNAME, ZELLE_DISPLAY, EXPRESS_ADDRESS, CONSENT_PHONE,
-  calculateAmount, tierFor, normalizeTrackingNumbers, buildMemo, buildConsent, smsLink, validateOrder, venmoLink, zelleLine, splitPaymentRequests, PAYMENT_MEMO_MAX_LENGTH, discountPercent, isPickupStyle,
+  calculateAmount, calculateOrderTotal, promoDiscountPercent, tierFor, normalizeTrackingNumbers, buildMemo, buildConsent, smsLink, validateOrder, venmoLink, zelleLine, splitPaymentRequests, PAYMENT_MEMO_MAX_LENGTH, discountPercent, isPickupStyle,
 } from '../app.js';
 
 const root = new URL('../', import.meta.url);
@@ -52,6 +52,17 @@ test('tiered pricing matches the design rate sheet for every service', () => {
   assert.throws(() => calculateAmount('express', 0));
   assert.throws(() => calculateAmount('express', 51));
   assert.throws(() => calculateAmount('bogus', 1));
+});
+
+test('Austin20 takes 20% off every service total and payment request, case-insensitively', () => {
+  assert.equal(promoDiscountPercent(' aUsTiN20 '), 20);
+  assert.equal(promoDiscountPercent('unknown'), 0);
+  assert.equal(calculateOrderTotal('express', 1, 'austin20'), 3.99);
+  assert.equal(calculateOrderTotal('bigdrop', 1, 'AUSTIN20'), 9.60);
+  assert.equal(calculateOrderTotal('express', 1, 'invalid'), 4.99);
+  const requests = splitPaymentRequests({ service: 'express', quantity: 1, dorm: 'A', room: '1', carrier: 'USPS', tracking: 'T', promoCode: 'austin20' });
+  assert.equal(requests[0].amount, '3.99');
+  assert.equal(requests.reduce((sum, r) => sum + r.amountCents, 0), 399);
 });
 
 test('tierFor reports the active tier index used for rate-row highlighting', () => {
@@ -179,7 +190,7 @@ test('Express drop-off address matches the imported design', () => {
   assert.equal(EXPRESS_ADDRESS, '1610 Valley Creek Dr., Hillsborough, NC 27278');
 });
 
-test('Big Drop is a flat $12 (discounted from $15) per item, and only Big Drop is highlighted', () => {
+test('Big Drop is a flat $12 (discounted from $15) per item and keeps its rate-card highlight', () => {
   assert.equal(calculateAmount('bigdrop', 1), 12);
   assert.equal(calculateAmount('bigdrop', 3), 36);
   assert.deepEqual(SERVICE_DETAILS.bigdrop.tiers.map(t => [t.was, t.rate]), [[15, 12]]);
