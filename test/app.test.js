@@ -174,7 +174,11 @@ test('Venmo link preserves ordered fields and mobile-safe note encoding', () => 
   assert.equal(link.amount, calculateAmount('pickup', 2).toFixed(2));
   const venmoUrl = new URL(link.deepLink);
   assert.equal(venmoUrl.origin, 'https://venmo.com');
-  assert.equal(venmoUrl.pathname, `/u/${VENMO_USERNAME}`);
+  assert.equal(venmoUrl.pathname, `/${VENMO_USERNAME}`);
+  assert.equal(venmoUrl.searchParams.get('txn'), 'pay');
+  assert.equal(venmoUrl.searchParams.get('recipients'), VENMO_USERNAME);
+  assert.equal(venmoUrl.searchParams.get('amount'), link.amount);
+  assert.equal(venmoUrl.searchParams.get('note'), link.note);
   assert.equal(link.note, splitPaymentRequests(o)[0].memo);
   assert.equal(link.profileUrl, `https://venmo.com/u/${VENMO_USERNAME}`);
 });

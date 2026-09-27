@@ -212,9 +212,9 @@ export function venmoLink(o, request) {
   return {
     amount,
     note,
-    // Venmo has no documented public prefilled-payment URL. Use the stable
-    // profile URL and show amount/note locally for manual completion.
-    deepLink: `https://venmo.com/u/${VENMO_USERNAME}`,
+    // Venmo payment deep link. Venmo does not formally guarantee this format,
+    // so the UI keeps an amount/note fallback visible after handoff.
+    deepLink: `https://venmo.com/${VENMO_USERNAME}?txn=pay&recipients=${encodeURIComponent(VENMO_USERNAME)}&amount=${encodeURIComponent(amount)}&note=${encodeURIComponent(note)}`,
     profileUrl: `https://venmo.com/u/${VENMO_USERNAME}`,
   };
 }
