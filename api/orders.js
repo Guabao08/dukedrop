@@ -1,0 +1,39 @@
+const allowedServices = new Set(['express', 'pickup', 'returns', 'bigdrop']);
+const promoCodes = { AUSTIN20: 20, FREEDROP: 100, COMPEDROP: 100 };
+const tiers = { express: [[2,4.99],[4,3.99],[50,2.99]], pickup: [[2,3.99],[4,2.99],[50,1.99]], returns: [[2,4.99],[4,3.99],[50,2.99]], bigdrop: [[50,12]] };
+
+function validOrder(o) {
+  return o && allowedServices.has(o.service) && Number.isInteger(o.quantity) && o.quantity >= 1 && o.quantity <= 50 &&
+    String(o.dorm || '').trim() && String(o.room || '').trim() && /^\+?[\d ()-]{7,20}$/.test(String(o.phone || '').trim()) &&
+    (o.service === 'returns' || !String(o.tracking || '').trim() || String(o.carrier || '').trim());
+}
+function totalFor(o) {
+  const tier = tiers[o.service].find(([max]) => o.quantity <= max);
+  const percent = promoCodes[String(o.promoCode || '').trim().toUpperCase()] || 0;
+  return Number((tier[1] * o.quantity * (100 - percent) / 100).toFixed(2));
+}
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return res.status(503).json({ error: 'Order storage is not configured' });
+  const o = req.body || {};
+  if (!validOrder(o)) return res.status(400).json({ error: 'Please complete the required order details.' });
+  const row = {
+    service: o.service, quantity: o.quantity, dorm: String(o.dorm).trim(), room: String(o.room).trim(),
+    phone: String(o.phone).trim(), carrier: o.carrier || null, tracking: o.service === 'returns' ? null : String(o.tracking).trim(),
+    source: o.source || null, mailroom: o.mailroom || null, box_number: o.box || null,
+    locker_location: o.lockerLocation || null, locker_code: o.locker || null, recipient_name: o.name || null,
+    fulfillment_mode: o.mode || null, promo_code: String(o.promoCode || '').trim().toUpperCase() || null,
+    discount_percent: promoCodes[String(o.promoCode || '').trim().toUpperCase()] || 0,
+    amount_due: totalFor(o), payment_method: ['venmo','zelle','card'].includes(o.payMethod) ? o.payMethod : null,
+    payment_status: 'unconfirmed', order_status: 'payment_started',
+  };
+  try {
+    const response = await fetch(`${process.env.SUPABASE_URL}/rest/v1/orders`, {
+      method: 'POST', headers: { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' }, body: JSON.stringify(row),
+    });
+    if (!response.ok) return res.status(502).json({ error: 'Could not save the order.' });
+    const [saved] = await response.json();
+    return res.status(201).json({ id: saved.id });
+  } catch { return res.status(502).json({ error: 'Could not save the order.' }); }
+}

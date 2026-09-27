@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
+import { readFile as readBuiltFile } from 'node:fs/promises';
+import { extname, join } from 'node:path';
 import {
   SERVICE_DETAILS, VENMO_USERNAME, ZELLE_DISPLAY, EXPRESS_ADDRESS, CONSENT_PHONE,
   calculateAmount, calculateOrderTotal, promoDiscountPercent, tierFor, normalizeTrackingNumbers, buildMemo, buildConsent, smsLink, validateOrder, venmoLink, zelleLine, splitPaymentRequests, PAYMENT_MEMO_MAX_LENGTH, discountPercent, isPickupStyle,
@@ -13,32 +16,40 @@ test('Vercel publishes only the built frontend artifact', async () => {
   const config = JSON.parse(await readFile(new URL('../vercel.json', import.meta.url)));
   assert.equal(config.buildCommand, 'npm run build');
   assert.equal(config.outputDirectory, 'dist');
-  assert.equal(config.functions, undefined);
+  assert.ok(config.functions);
   await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['build.js'], { cwd: root, stdio: 'ignore' });
     child.on('error', reject); child.on('exit', code => code === 0 ? resolve() : reject(new Error(`build exited ${code}`)));
   });
   const files = await readdir(new URL('../dist/', import.meta.url));
-  assert.deepEqual(files.sort(), ['app.js', 'faq.html', 'index.html', 'styles.css', 'videos']);
+  assert.deepEqual(files.sort(), ['app.js', 'dashboard', 'faq.html', 'index.html', 'styles.css', 'videos']);
+  assert.ok((await readdir(new URL('../dist/dashboard/', import.meta.url))).includes('dashboard.js'));
   for (const file of files) assert.doesNotMatch(file, /server|package|test|json/);
   assert.deepEqual((await readdir(new URL('../dist/videos/', import.meta.url))).sort(), ['duke-drop-1.mp4', 'duke-drop-2.mp4', 'duke-drop-3.mp4', 'duke-drop-4.mp4']);
 });
 
 test('built artifact works when served as static files', async () => {
-  const server = spawn('python3', ['-m', 'http.server', '4174'], { cwd: new URL('../dist/', import.meta.url), stdio: 'ignore' });
+  const base = new URL('../dist/', import.meta.url);
+  const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.mp4': 'video/mp4' };
+  const server = createServer(async (req, res) => {
+    try {
+      const pathname = req.url === '/' ? '/index.html' : decodeURIComponent(req.url.split('?')[0]);
+      const data = await readBuiltFile(new URL(`.${pathname}`, base));
+      res.writeHead(200, { 'Content-Type': types[extname(pathname)] || 'application/octet-stream' });
+      res.end(data);
+    } catch { res.writeHead(404); res.end('Not found'); }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
   try {
-    let response;
-    for (let attempt = 0; attempt < 20; attempt++) {
-      try { response = await fetch('http://127.0.0.1:4174/'); break; } catch { await new Promise(resolve => setTimeout(resolve, 50)); }
-    }
-    assert.ok(response, 'static server did not start');
+    const response = await fetch(`http://127.0.0.1:${address.port}/`);
     assert.equal(response.status, 200);
     assert.match(await response.text(), /DukeDrop/);
-    for (const path of ['faq.html', 'videos/duke-drop-1.mp4', 'videos/duke-drop-2.mp4', 'videos/duke-drop-3.mp4', 'videos/duke-drop-4.mp4']) {
-      const asset = await fetch(`http://127.0.0.1:4174/${path}`);
+    for (const path of ['faq.html', 'videos/duke-drop-1.mp4', 'videos/duke-drop-2.mp4', 'videos/duke-drop-3.mp4', 'videos/duke-drop-4.mp4', 'dashboard/index.html']) {
+      const asset = await fetch(`http://127.0.0.1:${address.port}/${path}`);
       assert.equal(asset.status, 200, `${path} should be published`);
     }
-  } finally { server.kill(); }
+  } finally { server.close(); }
 });
 
 test('tiered pricing matches the design rate sheet for every service', () => {
@@ -60,9 +71,19 @@ test('Austin20 takes 20% off every service total and payment request, case-insen
   assert.equal(calculateOrderTotal('express', 1, 'austin20'), 3.99);
   assert.equal(calculateOrderTotal('bigdrop', 1, 'AUSTIN20'), 9.60);
   assert.equal(calculateOrderTotal('express', 1, 'invalid'), 4.99);
-  const requests = splitPaymentRequests({ service: 'express', quantity: 1, dorm: 'A', room: '1', carrier: 'USPS', tracking: 'T', promoCode: 'austin20' });
+  const requests = splitPaymentRequests({ service: 'express', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', carrier: 'USPS', tracking: 'T', promoCode: 'austin20' });
   assert.equal(requests[0].amount, '3.99');
   assert.equal(requests.reduce((sum, r) => sum + r.amountCents, 0), 399);
+});
+
+test('FREEDROP and COMPEDROP take 100% off every service total and payment request', () => {
+  for (const code of ['FREEDROP', 'COMPEDROP']) {
+    assert.equal(promoDiscountPercent(code), 100);
+    assert.equal(calculateOrderTotal('express', 1, code), 0);
+    assert.equal(calculateOrderTotal('bigdrop', 2, code.toLowerCase()), 0);
+    const requests = splitPaymentRequests({ service: 'returns', quantity: 2, dorm: 'A', room: '1', promoCode: code });
+    assert.equal(requests[0].amount, '0.00');
+  }
 });
 
 test('tierFor reports the active tier index used for rate-row highlighting', () => {
@@ -91,19 +112,20 @@ test('tracking numbers normalize lines, whitespace, blanks, and duplicates', () 
   assert.deepEqual(normalizeTrackingNumbers('   \n'), []);
 });
 
-test('tracked services require a carrier and tracking; Returns does not', () => {
-  assert.equal(validateOrder({ service: 'express', quantity: 1, dorm: 'A', room: '1', carrier: 'USPS', tracking: 'T' }).valid, true);
-  assert.equal(validateOrder({ service: 'express', quantity: 1, dorm: 'A', room: '1', tracking: 'T' }).valid, false);
-  assert.equal(validateOrder({ service: 'returns', quantity: 1, dorm: 'A', room: '1' }).valid, true);
+test('shipping can be submitted before tracking exists; phone and known tracking carrier are validated', () => {
+  assert.equal(validateOrder({ service: 'express', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', carrier: 'USPS', tracking: 'T' }).valid, true);
+  assert.equal(validateOrder({ service: 'express', quantity: 1, dorm: 'A', room: '1', phone: '9195550123' }).valid, true);
+  assert.equal(validateOrder({ service: 'express', quantity: 1, dorm: 'A', room: '1', carrier: 'UPS', tracking: 'T' }).valid, false);
+  assert.equal(validateOrder({ service: 'returns', quantity: 1, dorm: 'A', room: '1', phone: '9195550123' }).valid, true);
 });
 
 test('Pickup mailroom requires mailroom, box, and name; locker requires building and a 6-digit code', () => {
-  assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', tracking: 'T', source: 'mailbox' }).valid, false);
-  const mailboxMissing = validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', tracking: 'T', source: 'mailbox' }).missing;
+  assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', tracking: 'T', source: 'mailbox' }).valid, false);
+  const mailboxMissing = validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', tracking: 'T', source: 'mailbox' }).missing;
   assert.deepEqual(mailboxMissing, ['carrier', 'which mailroom (building)', 'Duke box #', 'your name']);
-  assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', carrier: 'FedEx', tracking: 'T', source: 'mailbox', mailroom: 'Few', box: '9', name: 'Jane' }).valid, true);
-  assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', tracking: 'T', source: 'locker', lockerLocation: 'Bell', locker: '12345' }).valid, false);
-  assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', carrier: 'DHL eCommerce', tracking: 'T', source: 'locker', lockerLocation: 'Bell', locker: '123456' }).valid, true);
+  assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', carrier: 'FedEx', tracking: 'T', source: 'mailbox', mailroom: 'Few', box: '9', name: 'Jane' }).valid, true);
+  assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', tracking: 'T', source: 'locker', lockerLocation: 'Bell', locker: '12345' }).valid, false);
+  assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', carrier: 'DHL eCommerce', tracking: 'T', source: 'locker', lockerLocation: 'Bell', locker: '123456' }).valid, true);
 });
 
 test('memo is service-specific: EXPRESS/RETURN/PICKUP prefixes and pickup source details', () => {
@@ -117,7 +139,7 @@ test('memo is service-specific: EXPRESS/RETURN/PICKUP prefixes and pickup source
     buildMemo({ service: 'pickup', quantity: 1, dorm: 'Few', room: '4', tracking: 'T', source: 'locker', lockerLocation: 'Bell', locker: '447128' }),
     /Bell locker: 447128$/
   );
-  assert.doesNotMatch(buildMemo({ service: 'express', quantity: 1, dorm: 'A', room: '1', tracking: 'T' }), /[|+]/);
+  assert.doesNotMatch(buildMemo({ service: 'express', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', tracking: 'T' }), /[|+]/);
 });
 
 test('memo shows bracket placeholders for missing fields instead of disappearing', () => {
@@ -139,7 +161,7 @@ test('consent SMS links address Messages and preserve the complete consent text'
 });
 
 test('Venmo link preserves ordered fields and mobile-safe note encoding', () => {
-  const o = { service: 'pickup', quantity: 2, dorm: 'Few Quad', room: '4 A', carrier: 'Royal Mail', tracking: '1&2 % special\nTBA2', source: 'mailbox', mailroom: 'Few', box: '9', name: 'Jane' };
+  const o = { service: 'pickup', quantity: 2, dorm: 'Few Quad', room: '4 A', phone: '9195550123', carrier: 'Royal Mail', tracking: '1&2 % special\nTBA2', source: 'mailbox', mailroom: 'Few', box: '9', name: 'Jane' };
   const link = venmoLink(o);
   assert.equal(link.amount, calculateAmount('pickup', 2).toFixed(2));
   assert.match(link.deepLink, new RegExp(`^venmo://paycharge\\?txn=pay&recipients=${VENMO_USERNAME}&amount=[\\d.]+&note=`));
@@ -149,7 +171,7 @@ test('Venmo link preserves ordered fields and mobile-safe note encoding', () => 
 });
 
 test('Venmo link throws with the missing fields when the order is incomplete', () => {
-  assert.throws(() => venmoLink({ service: 'express', quantity: 1, dorm: '', room: '', tracking: '' }), /Missing: dorm, room #, carrier, tracking\/order #/);
+  assert.throws(() => venmoLink({ service: 'express', quantity: 1, dorm: '', room: '', tracking: '' }), /Missing: dorm, room #, valid phone number/);
 });
 
 test('Zelle line is just the bare memo — no amount or recipient — so pasting it never claims a payment', () => {
@@ -175,7 +197,7 @@ test('payment memos split at whole identifiers with deterministic cent allocatio
 });
 
 test('an identifier that cannot fit is a clear validation error', () => {
-  const o = { service: 'express', quantity: 1, dorm: 'A', room: '1', carrier: 'USPS', tracking: 'x'.repeat(280) };
+  const o = { service: 'express', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', carrier: 'USPS', tracking: 'x'.repeat(280) };
   assert.equal(validateOrder(o).valid, false);
   assert.match(validateOrder(o).missing.at(-1), /too long.*shorten\/check/i);
 });
@@ -218,19 +240,19 @@ test('isPickupStyle treats plain Pickup and Big Drop-in-pickup-mode alike, but n
   assert.equal(isPickupStyle('express'), false);
 });
 
-test('Big Drop in ship mode behaves like Express: no pickup fields required, no source suffix in the memo', () => {
-  const o = { service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', carrier: 'UPS', tracking: 'T', mode: 'ship' };
-  assert.equal(validateOrder(o).valid, true);
-  assert.equal(buildMemo(o), 'BIGDROP 1x — A 1 — UPS tracking: T');
+test('Big Drop in ship mode accepts missing tracking for later follow-up', () => {
+  const o = { service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', carrier: 'UPS', tracking: 'T', mode: 'ship' };
+  assert.equal(validateOrder({ ...o, tracking: '', carrier: '' }).valid, true);
+  assert.equal(buildMemo({ ...o, tracking: '', carrier: '' }), 'BIGDROP 1x — A 1');
 });
 
 test('Big Drop in pickup mode requires mailroom/locker fields just like Pickup', () => {
-  const missingMailroom = validateOrder({ service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', carrier: 'UPS', tracking: 'T', mode: 'pickup', source: 'mailbox' }).missing;
+  const missingMailroom = validateOrder({ service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', carrier: 'UPS', tracking: 'T', mode: 'pickup', source: 'mailbox' }).missing;
   assert.deepEqual(missingMailroom, ['which mailroom (building)', 'Duke box #', 'your name']);
-  const ok = validateOrder({ service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', carrier: 'UPS', tracking: 'T', mode: 'pickup', source: 'mailbox', mailroom: 'Few', box: '9', name: 'Jane' });
+  const ok = validateOrder({ service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', carrier: 'UPS', tracking: 'T', mode: 'pickup', source: 'mailbox', mailroom: 'Few', box: '9', name: 'Jane' });
   assert.equal(ok.valid, true);
   assert.match(
-    buildMemo({ service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', carrier: 'UPS', tracking: 'T', mode: 'pickup', source: 'locker', lockerLocation: 'Bell', locker: '447128' }),
+    buildMemo({ service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', carrier: 'UPS', tracking: 'T', mode: 'pickup', source: 'locker', lockerLocation: 'Bell', locker: '447128' }),
     /Bell locker: 447128$/
   );
 });
