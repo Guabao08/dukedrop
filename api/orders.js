@@ -1,9 +1,10 @@
 const allowedServices = new Set(['express', 'pickup', 'returns', 'bigdrop']);
+const allowedBaseServices = new Set(['express', 'pickup', 'returns']);
 const promoCodes = { AUSTIN20: 20, FREEDROP: 100, COMPEDROP: 100 };
 const tiers = { express: [[2,4.99],[4,3.99],[50,2.99]], pickup: [[2,3.99],[4,2.99],[50,1.99]], returns: [[2,4.99],[4,3.99],[50,2.99]], bigdrop: [[50,12]] };
 
 function validOrder(o) {
-  return o && allowedServices.has(o.service) && Number.isInteger(o.quantity) && o.quantity >= 1 && o.quantity <= 50 &&
+  return o && allowedServices.has(o.service) && (!o.baseService || allowedBaseServices.has(o.baseService)) && Number.isInteger(o.quantity) && o.quantity >= 1 && o.quantity <= 50 &&
     String(o.dorm || '').trim() && String(o.room || '').trim() && /^\+?[\d ()-]{7,20}$/.test(String(o.phone || '').trim()) &&
     (o.service === 'returns' || !String(o.tracking || '').trim() || String(o.carrier || '').trim());
 }
@@ -19,8 +20,8 @@ export default async function handler(req, res) {
   const o = req.body || {};
   if (!validOrder(o)) return res.status(400).json({ error: 'Please complete the required order details.' });
   const row = {
-    service: o.service, quantity: o.quantity, dorm: String(o.dorm).trim(), room: String(o.room).trim(),
-    phone: String(o.phone).trim(), carrier: o.carrier || null, tracking: o.service === 'returns' ? null : String(o.tracking).trim(),
+    service: o.service, base_service: o.baseService || o.service, order_size: o.orderSize || (o.service === 'bigdrop' ? 'bigdrop' : 'standard'), quantity: o.quantity, dorm: String(o.dorm).trim(), room: String(o.room).trim(),
+    phone: String(o.phone).trim(), carrier: o.carrier || null, tracking: o.baseService === 'returns' || o.service === 'returns' ? null : String(o.tracking).trim(),
     source: o.source || null, mailroom: o.mailroom || null, box_number: o.box || null,
     locker_location: o.lockerLocation || null, locker_code: o.locker || null, recipient_name: o.name || null,
     fulfillment_mode: o.mode || null, promo_code: String(o.promoCode || '').trim().toUpperCase() || null,

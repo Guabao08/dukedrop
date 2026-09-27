@@ -207,12 +207,12 @@ export function venmoLink(o, request) {
   const payment = request || splitPaymentRequests(o)[0];
   const amount = payment.amount;
   const note = payment.memo;
-  const params = [['txn', 'pay'], ['recipients', VENMO_USERNAME], ['amount', amount], ['note', note]]
-    .map(([k, x]) => `${k}=${encodeURIComponent(x)}`).join('&');
   return {
     amount,
     note,
-    deepLink: `venmo://paycharge?${params}`,
+    // Venmo has no documented public prefilled-payment URL. Use the stable
+    // profile URL and show amount/note locally for manual completion.
+    deepLink: `https://venmo.com/u/${VENMO_USERNAME}`,
     profileUrl: `https://venmo.com/u/${VENMO_USERNAME}`,
   };
 }
@@ -228,7 +228,7 @@ if (typeof document !== 'undefined') {
   const makeServiceState = (service) => ({
     qty: 1, dorm: '', room: '', carrier: '', tracking: '', payMethod: 'venmo',
     ...(service === 'pickup' || service === 'bigdrop' ? { source: 'mailbox', mailroom: '', box: '', lockerLocation: '', locker: '', name: '' } : {}),
-    ...(service === 'express' ? { size: 'standard' } : {}),
+    size: 'standard',
     ...(service === 'bigdrop' ? { mode: 'ship' } : {}),
   });
 
@@ -247,21 +247,21 @@ if (typeof document !== 'undefined') {
 
   function order(key) {
     const s = state[key];
-    return { service: key, quantity: s.qty, dorm: s.dorm, room: s.room, phone: s.phone || '', carrier: s.carrier, tracking: s.tracking, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name, mode: s.mode, promoCode: state.promoCode, payMethod: s.payMethod };
+    const service = s.size === 'bigdrop' ? 'bigdrop' : key;
+    return { service, baseService: key, orderSize: s.size, quantity: s.qty, dorm: s.dorm, room: s.room, phone: s.phone || '', carrier: s.carrier, tracking: s.tracking, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name, mode: s.mode, promoCode: state.promoCode, payMethod: s.payMethod };
   }
 
   function buildVM(key) {
     const s = state[key];
-    const service = key === 'express' && s.size === 'bigdrop' ? 'bigdrop' : key;
+    const service = s.size === 'bigdrop' ? 'bigdrop' : key;
     const detail = SERVICE_DETAILS[service];
     const o = order(key);
-    o.service = service;
     const { tier, index: tierIndex } = tierFor(service, s.qty);
     const subtotal = tier.rate * s.qty;
     const promoPercent = promoDiscountPercent(state.promoCode);
     const total = calculateOrderTotal(service, s.qty, state.promoCode);
     const v = validateOrder(o);
-    const pickupStyle = isPickupStyle(key, s.mode);
+    const pickupStyle = (key === 'pickup' && s.size !== 'bigdrop') || (s.size === 'bigdrop' && s.mode === 'pickup');
     const isLocker = pickupStyle && s.source === 'locker';
     const showConsent = pickupStyle && !isLocker;
     const consentText = showConsent ? buildConsent(s.name, s.mailroom) : '';
@@ -276,17 +276,17 @@ if (typeof document !== 'undefined') {
   }
 
   function tabsHtml() {
-    const isBigDrop = state.express.size === 'bigdrop';
+    const isBigDrop = state[state.active].size === 'bigdrop';
     return `
       <div class="tabs" aria-label="Order service">${['express', 'pickup', 'returns'].map((k) =>
         `<button type="button" class="tab${state.active === k ? ' active' : ''}" data-action="tab" data-service="${k}">${SERVICE_DETAILS[k].title}</button>`
       ).join('')}</div>
-      ${state.active === 'express' ? `<div class="toggle-row" aria-label="Package size"><button type="button" class="tab${!isBigDrop ? ' active' : ''}" data-action="size" data-size="standard">Normal size</button><button type="button" class="tab${isBigDrop ? ' active' : ''}" data-action="size" data-size="bigdrop">Big Drop</button></div>` : ''}`;
+      <div class="toggle-row" aria-label="Order size"><button type="button" class="tab${!isBigDrop ? ' active' : ''}" data-action="size" data-size="standard">Normal size</button><button type="button" class="tab${isBigDrop ? ' active' : ''}" data-action="size" data-size="bigdrop">Big Drop</button></div>`;
   }
 
   function bannerHtml(key) {
     const s = state[key];
-    if (key !== 'express' && !(key === 'bigdrop' && s.mode === 'ship')) return '';
+    if (key !== 'express' && !(s.size === 'bigdrop' && s.mode !== 'pickup')) return '';
     return `
       <div class="address-box">
         <div><strong>Ship here under your own name</strong><span>${esc(EXPRESS_ADDRESS)}</span></div>
@@ -305,8 +305,9 @@ if (typeof document !== 'undefined') {
   }
 
   function ratesHtml(key) {
-    const detail = SERVICE_DETAILS[key];
-    const { index: activeIndex } = tierFor(key, state[key].qty);
+    const service = state[key].size === 'bigdrop' ? 'bigdrop' : key;
+    const detail = SERVICE_DETAILS[service];
+    const { index: activeIndex } = tierFor(service, state[key].qty);
     return `
       <div class="rates" data-role="rates" aria-label="${esc(detail.rateHeader)}">
         ${detail.tiers.map((t, i) => `<div class="rate-row${i === activeIndex ? ' is-active' : ''}" data-tier-index="${i}"><span>${esc(t.label)}</span><strong>${t.was ? `<del>${money(t.was)}</del> <b>${money(t.rate)}</b>` : money(t.rate)}/${detail.unit}</strong>${t.was ? `<small>/${detail.unit}</small>` : ''}</div>`).join('')}
@@ -314,7 +315,7 @@ if (typeof document !== 'undefined') {
   }
 
   function modeToggleHtml(key) {
-    if (key !== 'bigdrop') return '';
+    if (state[key].size !== 'bigdrop') return '';
     const s = state[key];
     const isPickup = s.mode === 'pickup';
     return `
@@ -326,7 +327,7 @@ if (typeof document !== 'undefined') {
 
   function sourceToggleHtml(key) {
     const s = state[key];
-    if (!isPickupStyle(key, s.mode)) return '';
+    if (!(key === 'pickup' && s.size !== 'bigdrop') && !(s.size === 'bigdrop' && s.mode === 'pickup')) return '';
     const isLocker = s.source === 'locker';
     return `
       <div class="toggle-row">
@@ -367,7 +368,7 @@ if (typeof document !== 'undefined') {
     if (method === 'venmo') {
       const label = vm.ready ? `Pay ${money(vm.total)} with Venmo` : 'Enter details to pay';
       return `${requestSummary || `<button type="button" class="btn-pay" data-action="pay-venmo" ${vm.ready ? '' : 'disabled'}>${label}</button>`}
-        ${state.venmoFallback[key] ? `<div class="fallback">Venmo app didn't open? Send the requested amount to <a href="https://venmo.com/u/${VENMO_USERNAME}" target="_blank" rel="noopener">@${VENMO_USERNAME}</a>. DukeDrop does not confirm payment.</div>` : ''}`;
+        ${state.venmoFallback[key] ? `<div class="fallback"><strong>Finish in Venmo</strong><p>Pay <strong>${money(vm.total)}</strong> to <a href="https://venmo.com/u/${VENMO_USERNAME}" target="_blank" rel="noopener">@${VENMO_USERNAME}</a>.</p><p>Paste this payment note:</p><div class="fallback-mono" data-role="venmo-note">${esc(vm.memo)}</div><button type="button" class="copy-btn" data-action="copy" data-value-role="venmo-note">Copy note</button><p>DukeDrop does not confirm payment.</p></div>` : ''}`;
     }
     if (method === 'zelle') {
       const label = vm.ready ? `Pay ${money(vm.total)} with Zelle` : 'Enter details to pay with Zelle';
@@ -378,7 +379,7 @@ if (typeof document !== 'undefined') {
   }
 
   function cardHtml(key) {
-    const displayService = key === 'express' && state.express.size === 'bigdrop' ? 'bigdrop' : key;
+    const displayService = state[key].size === 'bigdrop' ? 'bigdrop' : key;
     const detail = SERVICE_DETAILS[displayService];
     const s = state[key];
     const vm = buildVM(key);
@@ -387,7 +388,7 @@ if (typeof document !== 'undefined') {
         ${bannerHtml(key)}
         <h2>${esc(detail.title)}</h2>
         <p class="desc">${esc(detail.intro)}</p>
-        ${calloutHtml(detail)}
+        ${displayService === 'bigdrop' && key === 'returns' ? calloutHtml(SERVICE_DETAILS.returns) : calloutHtml(detail)}
         ${sizeLimitHtml(detail)}
         ${modeToggleHtml(key)}
         ${ratesHtml(key)}
@@ -405,11 +406,11 @@ if (typeof document !== 'undefined') {
         </div>
         <label>Phone number<input type="tel" inputmode="tel" autocomplete="tel" placeholder="e.g. (919) 555-0123" value="${esc(s.phone || '')}" data-field="phone" required></label>
         ${sourceToggleHtml(key)}
-        ${key !== 'returns' ? `<div class="field-grid"><label>Carrier (if known)<input type="text" placeholder="e.g. UPS, USPS, FedEx, DHL" value="${esc(s.carrier)}" data-field="carrier"></label><label>Tracking/order numbers (if available)<span class="field-hint">Optional — Amazon may provide tracking later. One number per line if known.</span><textarea rows="3" placeholder="Enter tracking/order number if available" data-field="tracking">${esc(s.tracking)}</textarea></label></div>` : ''}
+        ${(key !== 'returns' || s.size === 'bigdrop') ? `<div class="field-grid"><label>Carrier (if known)<input type="text" placeholder="e.g. UPS, USPS, FedEx, DHL" value="${esc(s.carrier)}" data-field="carrier"></label><label>Tracking/order numbers (if available)<span class="field-hint">If you don't have the tracking number yet, we'll follow up in 24 hours to get it.</span><textarea rows="3" placeholder="Enter tracking/order number if available" data-field="tracking">${esc(s.tracking)}</textarea></label></div>` : ''}
         ${consentHtml(key, vm)}
         <label>Promo code (optional)
           <input type="text" placeholder="Enter promo code" value="${esc(state.promoCode)}" data-field="promoCode" maxlength="64" autocapitalize="characters" autocorrect="off" spellcheck="false" aria-describedby="promo-code-hint">
-          <span class="field-hint" id="promo-code-hint" data-role="promo-hint">${vm.promoEntered ? (vm.promoPercent ? `${esc(state.promoCode.trim())} applied: ${vm.promoPercent}% off your order.` : 'That promo code isn’t recognized.') : 'Try code Austin20 for 20% off your order.'}</span>
+          <span class="field-hint" id="promo-code-hint" data-role="promo-hint">${vm.promoEntered ? (vm.promoPercent ? `${esc(state.promoCode.trim())} applied: ${vm.promoPercent}% off your order.` : 'That promo code isn’t recognized.') : ''}</span>
         </label>
         <div class="total-row">
           <div>
@@ -454,7 +455,7 @@ if (typeof document !== 'undefined') {
     const total = card.querySelector('[data-role="total"]'); if (total) total.textContent = money(vm.total);
     const sub = card.querySelector('[data-role="subtext"]'); if (sub) sub.textContent = vm.subText;
     const promoHint = card.querySelector('[data-role="promo-hint"]');
-    if (promoHint) promoHint.textContent = vm.promoEntered ? (vm.promoPercent ? `${state.promoCode.trim()} applied: ${vm.promoPercent}% off your order.` : 'That promo code isn’t recognized.') : 'Try code Austin20 for 20% off your order.';
+    if (promoHint) promoHint.textContent = vm.promoEntered ? (vm.promoPercent ? `${state.promoCode.trim()} applied: ${vm.promoPercent}% off your order.` : 'That promo code isn’t recognized.') : '';
     const memo = card.querySelector('[data-role="memo"]'); if (memo) memo.textContent = vm.memo;
     const consentText = card.querySelector('[data-role="consent-text"]'); if (consentText) consentText.textContent = vm.consentText;
     const zelleLineEl = card.querySelector('[data-role="zelle-line"]'); if (zelleLineEl) zelleLineEl.textContent = vm.zelleLine;
@@ -520,7 +521,7 @@ if (typeof document !== 'undefined') {
     const action = el.dataset.action;
 
     if (action === 'order-type') { state.active = el.dataset.type === 'bigdrop' ? 'bigdrop' : 'express'; render(); return; }
-    if (action === 'size') { state.express.size = el.dataset.size; state.active = 'express'; render(); return; }
+    if (action === 'size') { state[key].size = el.dataset.size; render(); return; }
     if (action === 'tab') { state.active = el.dataset.service; render(); return; }
     if (action === 'source') { state[key].source = el.dataset.source; render(); return; }
     if (action === 'mode') { state[key].mode = el.dataset.mode; render(); return; }
@@ -541,11 +542,14 @@ if (typeof document !== 'undefined') {
     if (action === 'pay-venmo') {
       const vm = buildVM(key);
       if (!vm.ready) return;
-      const requests = splitPaymentRequests(order(key));
+      const requests = buildVM(key).requests;
       if (!await saveOrder(key)) return;
       const link = venmoLink(order(key), requests[(Number(el.dataset.request) || 1) - 1]);
-      try { window.location.href = link.deepLink; } catch { /* Venmo app handoff unsupported here */ }
-      setTimeout(() => { state.venmoFallback[key] = true; render(); }, 1200);
+      const payment = requests[(Number(el.dataset.request) || 1) - 1];
+      copy(payment.memo, () => {});
+      window.open(link.deepLink, '_blank', 'noopener');
+      state.venmoFallback[key] = true;
+      render();
       return;
     }
     if (action === 'pay-zelle') {
@@ -563,7 +567,7 @@ if (typeof document !== 'undefined') {
 
   async function saveOrder(key) {
     const o = order(key);
-    if (state[key].saved) return;
+    if (state[key].saved) return true;
     try {
       const response = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
       if (!response.ok) throw new Error('Order could not be saved. Please contact DukeDrop.');

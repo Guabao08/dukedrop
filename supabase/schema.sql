@@ -4,6 +4,8 @@ create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
   service text not null check (service in ('express','pickup','returns','bigdrop')),
+  base_service text not null default 'express' check (base_service in ('express','pickup','returns')),
+  order_size text not null default 'standard' check (order_size in ('standard','bigdrop')),
   quantity integer not null check (quantity between 1 and 50),
   dorm text not null,
   room text not null,

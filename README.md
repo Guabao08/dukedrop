@@ -1,6 +1,6 @@
 # DukeDrop
 
-Mobile-friendly order form with Express, Pickup, Returns, and a Big Drop size choice within shipping. Promo codes are `AUSTIN20` (20% off), `FREEDROP` (100% off), and `COMPEDROP` (100% off). Orders collect a phone number and are saved when a customer starts payment. A zero-dollar promo order still follows the existing payment handoff and is marked `payment_started`; payment is never claimed as confirmed automatically.
+Mobile-friendly order form with Express, Pickup, and Returns service options, each with a Normal size or Big Drop choice. Promo codes are `AUSTIN20` (20% off), `FREEDROP` (100% off), and `COMPEDROP` (100% off). Orders collect a phone number and are saved when a customer starts payment. A zero-dollar promo order still follows the existing payment handoff and is marked `payment_started`; payment is never claimed as confirmed automatically.
 
 ## Supabase setup
 
@@ -13,7 +13,7 @@ The API validates fields and recomputes the amount from server-side pricing and 
 
 ## Tracking follow-up funnel
 
-Orders that need a tracking number are queued with a due time two days after checkout. The dashboard shows the queue and offers a prefilled SMS link for staff to send manually; when a customer supplies a tracking number, staff can update the order. This repository does not send unattended SMS automatically. Before enabling a scheduled Twilio (or other SMS provider) sender, configure the SMS provider and approved messaging/consent language, then add its credentials as server-only environment variables and schedule a sender to select due `pending` rows and mark sent attempts. Never expose provider credentials in the frontend.
+Orders that need a tracking number are queued with a due time 24 hours after checkout. The dashboard shows the queue and offers a prefilled SMS link for staff to send manually; when a customer supplies a tracking number, staff can update the order. This repository does not send unattended SMS automatically. Before enabling a scheduled Twilio (or other SMS provider) sender, configure the SMS provider and approved messaging/consent language, then add its credentials as server-only environment variables and schedule a sender to select due `pending` rows and mark sent attempts. Never expose provider credentials in the frontend.
 
 ## Run and deploy
 
