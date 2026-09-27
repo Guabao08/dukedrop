@@ -65,6 +65,14 @@ test('tiered pricing matches the design rate sheet for every service', () => {
   assert.throws(() => calculateAmount('bogus', 1));
 });
 
+test('Big Drop size selector is shown alongside Express, Pickup, and Returns tabs', async () => {
+  const source = await readFile(new URL('../app.js', import.meta.url), 'utf8');
+  assert.match(source, /\['express', 'pickup', 'returns'\]/);
+  assert.match(source, /aria-label=\"Order size\"/);
+  assert.match(source, /state\[key\]\.size = el\.dataset\.size/);
+  assert.match(source, /function ratesHtml\(key\)[\s\S]*?state\[key\]\.size === 'bigdrop'/);
+});
+
 test('Austin20 takes 20% off every service total and payment request, case-insensitively', () => {
   assert.equal(promoDiscountPercent(' aUsTiN20 '), 20);
   assert.equal(promoDiscountPercent('unknown'), 0);

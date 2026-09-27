@@ -143,3 +143,11 @@ button,a,input,textarea,summary{touch-action:manipulation}
   html{scroll-behavior:auto}
   .video-track{transition:none}
 }
+
+/* Keep tracking inputs aligned and readable across viewport sizes. */
+.tracking-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin:0 0 16px;min-width:0}
+.tracking-fields>label{display:block;min-width:0;width:100%}
+.tracking-fields textarea{display:block;width:100%;min-width:0;box-sizing:border-box;line-height:1.45}
+.field-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.field-grid>label{min-width:0}
+@media(max-width:520px){.field-grid{grid-template-columns:minmax(0,1fr)}}

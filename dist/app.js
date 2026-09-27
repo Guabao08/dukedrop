@@ -14,6 +14,8 @@ export const INSTAGRAM_HANDLE = 'dukedrop_';
 // documented Venmo limit for both paths to guarantee copy/paste parity.
 export const PAYMENT_MEMO_MAX_LENGTH = 280;
 export const PROMO_CODES = { AUSTIN20: 20, FREEDROP: 100, COMPEDROP: 100 };
+// Turn on only after Supabase schema and Vercel credentials are configured.
+const ORDER_STORAGE_ENABLED = false;
 
 export const SIZE_LIMIT_NOTE = "Size limit: nothing bigger than a mini microwave. Bigger than that — furniture, TVs, chairs, and the like — goes through Big Drop instead.";
 
@@ -261,7 +263,7 @@ if (typeof document !== 'undefined') {
     const promoPercent = promoDiscountPercent(state.promoCode);
     const total = calculateOrderTotal(service, s.qty, state.promoCode);
     const v = validateOrder(o);
-    const pickupStyle = (key === 'pickup' && s.size !== 'bigdrop') || (s.size === 'bigdrop' && s.mode === 'pickup');
+    const pickupStyle = key === 'pickup';
     const isLocker = pickupStyle && s.source === 'locker';
     const showConsent = pickupStyle && !isLocker;
     const consentText = showConsent ? buildConsent(s.name, s.mailroom) : '';
@@ -286,7 +288,7 @@ if (typeof document !== 'undefined') {
 
   function bannerHtml(key) {
     const s = state[key];
-    if (key !== 'express' && !(s.size === 'bigdrop' && s.mode !== 'pickup')) return '';
+    if (key === 'returns' || (s.size === 'bigdrop' && s.mode === 'pickup')) return '';
     return `
       <div class="address-box">
         <div><strong>Ship here under your own name</strong><span>${esc(EXPRESS_ADDRESS)}</span></div>
@@ -315,7 +317,7 @@ if (typeof document !== 'undefined') {
   }
 
   function modeToggleHtml(key) {
-    if (state[key].size !== 'bigdrop') return '';
+    if (state[key].size !== 'bigdrop' || key !== 'pickup') return '';
     const s = state[key];
     const isPickup = s.mode === 'pickup';
     return `
@@ -327,7 +329,7 @@ if (typeof document !== 'undefined') {
 
   function sourceToggleHtml(key) {
     const s = state[key];
-    if (!(key === 'pickup' && s.size !== 'bigdrop') && !(s.size === 'bigdrop' && s.mode === 'pickup')) return '';
+    if (key !== 'pickup') return '';
     const isLocker = s.source === 'locker';
     return `
       <div class="toggle-row">
@@ -389,7 +391,7 @@ if (typeof document !== 'undefined') {
         <h2>${esc(detail.title)}</h2>
         <p class="desc">${esc(detail.intro)}</p>
         ${displayService === 'bigdrop' && key === 'returns' ? calloutHtml(SERVICE_DETAILS.returns) : calloutHtml(detail)}
-        ${sizeLimitHtml(detail)}
+        ${key === 'returns' && displayService === 'bigdrop' ? '' : sizeLimitHtml(detail)}
         ${modeToggleHtml(key)}
         ${ratesHtml(key)}
         <div class="field">
@@ -406,11 +408,11 @@ if (typeof document !== 'undefined') {
         </div>
         <label>Phone number<input type="tel" inputmode="tel" autocomplete="tel" placeholder="e.g. (919) 555-0123" value="${esc(s.phone || '')}" data-field="phone" required></label>
         ${sourceToggleHtml(key)}
-        ${(key !== 'returns' || s.size === 'bigdrop') ? `<div class="field-grid"><label>Carrier (if known)<input type="text" placeholder="e.g. UPS, USPS, FedEx, DHL" value="${esc(s.carrier)}" data-field="carrier"></label><label>Tracking/order numbers (if available)<span class="field-hint">If you don't have the tracking number yet, we'll follow up in 24 hours to get it.</span><textarea rows="3" placeholder="Enter tracking/order number if available" data-field="tracking">${esc(s.tracking)}</textarea></label></div>` : ''}
+        ${key !== 'returns' ? `<div class="tracking-fields"><label>Carrier (if known)<input type="text" placeholder="e.g. UPS, USPS, FedEx, DHL" value="${esc(s.carrier)}" data-field="carrier"></label><label>Tracking/order numbers (if available)<span class="field-hint">If you don't have it yet, we'll follow up in 24 hours.</span><textarea rows="3" placeholder="Enter tracking/order number if available" data-field="tracking"></textarea></label></div>` : ''}
         ${consentHtml(key, vm)}
         <label>Promo code (optional)
           <input type="text" placeholder="Enter promo code" value="${esc(state.promoCode)}" data-field="promoCode" maxlength="64" autocapitalize="characters" autocorrect="off" spellcheck="false" aria-describedby="promo-code-hint">
-          <span class="field-hint" id="promo-code-hint" data-role="promo-hint">${vm.promoEntered ? (vm.promoPercent ? `${esc(state.promoCode.trim())} applied: ${vm.promoPercent}% off your order.` : 'That promo code isn’t recognized.') : ''}</span>
+          ${vm.promoEntered ? `<span class="field-hint" id="promo-code-hint" data-role="promo-hint">${vm.promoPercent ? `${esc(state.promoCode.trim())} applied: ${vm.promoPercent}% off your order.` : 'That promo code isn’t recognized.'}</span>` : ''}
         </label>
         <div class="total-row">
           <div>
@@ -454,8 +456,9 @@ if (typeof document !== 'undefined') {
     });
     const total = card.querySelector('[data-role="total"]'); if (total) total.textContent = money(vm.total);
     const sub = card.querySelector('[data-role="subtext"]'); if (sub) sub.textContent = vm.subText;
-    const promoHint = card.querySelector('[data-role="promo-hint"]');
-    if (promoHint) promoHint.textContent = vm.promoEntered ? (vm.promoPercent ? `${state.promoCode.trim()} applied: ${vm.promoPercent}% off your order.` : 'That promo code isn’t recognized.') : '';
+    let promoHint = card.querySelector('[data-role="promo-hint"]');
+    if (vm.promoEntered && !promoHint) { promoHint = document.createElement('span'); promoHint.className = 'field-hint'; promoHint.id = 'promo-code-hint'; promoHint.dataset.role = 'promo-hint'; card.querySelector('[data-field="promoCode"]').after(promoHint); }
+    if (promoHint) { promoHint.textContent = vm.promoEntered ? (vm.promoPercent ? `${state.promoCode.trim()} applied: ${vm.promoPercent}% off your order.` : 'That promo code isn’t recognized.') : ''; if (!vm.promoEntered) promoHint.remove(); }
     const memo = card.querySelector('[data-role="memo"]'); if (memo) memo.textContent = vm.memo;
     const consentText = card.querySelector('[data-role="consent-text"]'); if (consentText) consentText.textContent = vm.consentText;
     const zelleLineEl = card.querySelector('[data-role="zelle-line"]'); if (zelleLineEl) zelleLineEl.textContent = vm.zelleLine;
@@ -566,10 +569,12 @@ if (typeof document !== 'undefined') {
   });
 
   async function saveOrder(key) {
+    if (!ORDER_STORAGE_ENABLED) return true;
     const o = order(key);
     if (state[key].saved) return true;
     try {
       const response = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
+      if (response.status === 503) return true; // Supabase is an optional setup step for now.
       if (!response.ok) throw new Error('Order could not be saved. Please contact DukeDrop.');
       state[key].saved = true;
       return true;
