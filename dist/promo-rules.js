@@ -1,8 +1,8 @@
 export const PROMO_CODES = Object.freeze({ AUSTIN20: 20, FREEDROP: 100, COMPEDROP: 100 });
 
 const RESTRICTED_PROMOS = Object.freeze({
-  FREEDROP: { dorm: 'craven house d', room: '214', label: 'Craven House D, room 214' },
-  COMPEDROP: { dorm: 'pegram', room: '210', label: 'Pegram, room 210' },
+  FREEDROP: { dorm: 'craven house d', room: '214' },
+  COMPEDROP: { dorm: 'pegram', room: '210' },
 });
 
 function normalize(value) {
@@ -29,8 +29,8 @@ export function promoMessage(code, order = {}) {
   const key = normalizePromoCode(code);
   if (!key) return '';
   const percent = promoDiscountPercent(key);
-  if (!percent) return 'That promo code isn’t recognized.';
+  if (!percent) return 'Invalid code';
   const restriction = RESTRICTED_PROMOS[key];
-  if (restriction && !isPromoEligible(key, order)) return `${key} is only valid for ${restriction.label}.`;
+  if (restriction && !isPromoEligible(key, order)) return 'Invalid code';
   return `${key} applied: ${percent}% off your order.`;
 }
