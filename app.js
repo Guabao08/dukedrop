@@ -199,7 +199,7 @@ export function validateOrder(o) {
 
 function venmoNote(o) {
   const full = buildMemo(o);
-  if (full.length <= PAYMENT_MEMO_MAX_LENGTH) return full;
+  if (full.length <= PAYMENT_MEMO_MAX_LENGTH) return splitPaymentRequests(o)[0].memo;
   const identifiers = o.service === 'returns' ? [] : normalizeTrackingNumbers(o.tracking);
   if (!identifiers.length) return `${full.slice(0, PAYMENT_MEMO_MAX_LENGTH - 1).trimEnd()}…`;
   const trackingHeader = ` — ${o.carrier || '[Carrier]'} tracking:`;
