@@ -146,7 +146,7 @@ export function splitPaymentRequests(o) {
   const chunks = [];
   for (const identifier of identifiers) {
     const candidate = [...(chunks.at(-1) || []), identifier];
-    const memo = buildMemo({ ...o, tracking: candidate.join('\\n') });
+    const memo = buildMemo({ ...o, tracking: candidate.join('\n') });
     if (memo.length > PAYMENT_MEMO_MAX_LENGTH) {
       if (!chunks.length) throw new Error(`Tracking/order number is too long to fit in a payment memo; please shorten/check it: ${identifier}`);
       chunks.push([identifier]);
@@ -160,7 +160,7 @@ export function splitPaymentRequests(o) {
   const remainder = totalCents % chunks.length;
   return chunks.map((ids, i) => {
     const amountCents = base + (i < remainder ? 1 : 0);
-    const memo = buildMemo({ ...o, tracking: ids.join('\\n') });
+    const memo = buildMemo({ ...o, tracking: ids.join('\n') });
     return { index: i + 1, total: chunks.length, identifiers: ids, amountCents, amount: (amountCents / 100).toFixed(2), memo };
   });
 }
