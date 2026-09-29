@@ -168,19 +168,15 @@ test('consent SMS links address Messages and preserve the complete consent text'
   }
 });
 
-test('Venmo link preserves ordered fields and mobile-safe note encoding', () => {
+test('Venmo payment details contain one total and use the stable profile handoff', () => {
   const o = { service: 'pickup', quantity: 2, dorm: 'Few Quad', room: '4 A', phone: '9195550123', carrier: 'Royal Mail', tracking: '1&2 % special\nTBA2', source: 'mailbox', mailroom: 'Few', box: '9', name: 'Jane' };
   const link = venmoLink(o);
   assert.equal(link.amount, calculateAmount('pickup', 2).toFixed(2));
-  const venmoUrl = new URL(link.deepLink);
-  assert.equal(venmoUrl.origin, 'https://venmo.com');
-  assert.equal(venmoUrl.pathname, `/${VENMO_USERNAME}`);
-  assert.equal(venmoUrl.searchParams.get('txn'), 'pay');
-  assert.equal(venmoUrl.searchParams.get('recipients'), VENMO_USERNAME);
-  assert.equal(venmoUrl.searchParams.get('amount'), link.amount);
-  assert.equal(venmoUrl.searchParams.get('note'), link.note);
+  const profileUrl = new URL(link.profileUrl);
+  assert.equal(profileUrl.origin, 'https://venmo.com');
+  assert.equal(profileUrl.pathname, `/u/${VENMO_USERNAME}`);
+  assert.equal(link.recipient, VENMO_USERNAME);
   assert.equal(link.note, splitPaymentRequests(o)[0].memo);
-  assert.equal(link.profileUrl, `https://venmo.com/u/${VENMO_USERNAME}`);
 });
 
 test('Venmo link throws with the missing fields when the order is incomplete', () => {

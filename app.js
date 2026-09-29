@@ -5,6 +5,7 @@ import { PROMO_CODES, isPromoEligible, promoDiscountPercent, promoMessage } from
 export { PROMO_CODES, isPromoEligible, promoDiscountPercent, promoMessage };
 
 export const VENMO_USERNAME = 'dukedrop';
+const VENMO_PROFILE_URL = `https://venmo.com/u/${VENMO_USERNAME}`;
 export const ZELLE_DISPLAY = '(469) 964-9545';
 export const ZELLE_DIGITS = ZELLE_DISPLAY.replace(/\D/g, '');
 export const CONSENT_PHONE = '2019160008';
@@ -182,7 +183,11 @@ export function validateOrder(o) {
   if (!/^\+?[\d ()-]{7,20}$/.test(String(o.phone ?? '').trim())) missing.push('valid phone number');
   if (o.service !== 'returns' && normalizeTrackingNumbers(o.tracking).length && !String(o.carrier ?? '').trim()) missing.push('carrier');
   if (missing.length === 0) {
-    try { splitPaymentRequests(o); } catch (error) { missing.push(error.message); }
+    // Venmo is one payment with one shortened note; only Zelle needs requests
+    // split around identifiers to fit the receiving bank's memo field.
+    if (o.payMethod !== 'venmo') {
+      try { splitPaymentRequests(o); } catch (error) { missing.push(error.message); }
+    }
   }
   if (isPickupStyle(o.service, o.mode)) {
     if (o.source === 'locker') {
@@ -199,7 +204,7 @@ export function validateOrder(o) {
 
 function venmoNote(o) {
   const full = buildMemo(o);
-  if (full.length <= PAYMENT_MEMO_MAX_LENGTH) return splitPaymentRequests(o)[0].memo;
+  if (full.length <= PAYMENT_MEMO_MAX_LENGTH) return full;
   const identifiers = o.service === 'returns' ? [] : normalizeTrackingNumbers(o.tracking);
   if (!identifiers.length) return `${full.slice(0, PAYMENT_MEMO_MAX_LENGTH - 1).trimEnd()}…`;
   const trackingHeader = ` — ${o.carrier || '[Carrier]'} tracking:`;
@@ -220,17 +225,17 @@ function venmoNote(o) {
 }
 
 export function venmoLink(o) {
-  const v = validateOrder(o);
+  const v = validateOrder({ ...o, payMethod: 'venmo' });
   if (!v.valid) throw new Error(`Missing: ${v.missing.join(', ')}`);
   const amount = calculateOrderTotal(o.service, o.quantity, o.promoCode).toFixed(2);
   const note = venmoNote(o);
   return {
     amount,
     note,
-    // Venmo payment deep link. Venmo does not formally guarantee this format,
-    // so the UI keeps an amount/note fallback visible after handoff.
-    deepLink: `https://venmo.com/${VENMO_USERNAME}?txn=pay&recipients=${encodeURIComponent(VENMO_USERNAME)}&amount=${encodeURIComponent(amount)}&note=${encodeURIComponent(note)}`,
-    profileUrl: `https://venmo.com/u/${VENMO_USERNAME}`,
+    recipient: VENMO_USERNAME,
+    // Use the stable profile route. Peer-to-peer payment query parameters are
+    // not a reliable way to pre-create or prefill a transaction.
+    profileUrl: VENMO_PROFILE_URL,
   };
 }
 
@@ -264,6 +269,7 @@ if (typeof document !== 'undefined') {
 
   function order(key) {
     const s = state[key];
+    if (s.savedOrder) return s.savedOrder;
     const service = s.size === 'bigdrop' ? 'bigdrop' : key;
     const promoCode = isPromoEligible(state.promoCode, s) ? state.promoCode : '';
     return { service, baseService: key, orderSize: s.size, quantity: s.qty, dorm: s.dorm, room: s.room, phone: s.phone || '', carrier: s.carrier, tracking: s.tracking, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name, mode: s.mode, promoCode, payMethod: s.payMethod };
@@ -382,11 +388,12 @@ if (typeof document !== 'undefined') {
     const s = state[key];
     const method = s.payMethod;
     const requests = vm.requests;
-    const requestSummary = method === 'zelle' && requests.length > 1 ? `<div class="payment-requests"><strong>Payment requests</strong>${requests.map((r) => `<div class="payment-request"><div>Payment ${r.index} of ${r.total}: <strong>${money(r.amountCents / 100)}</strong></div><div class="fallback-mono">${esc(r.identifiers.join(', '))}</div><div>${esc(r.memo)}</div><button type="button" class="btn-pay" data-action="${method === 'venmo' ? 'pay-venmo' : 'pay-zelle'}" data-request="${r.index}" ${vm.ready ? '' : 'disabled'}>${method === 'venmo' ? 'Open' : 'Copy'} payment ${r.index}</button></div>`).join('')}</div>` : '';
+    const requestSummary = method === 'zelle' && requests.length > 1 ? `<div class="payment-requests"><strong>Payment requests</strong>${requests.map((r) => `<div class="payment-request"><div>Payment ${r.index} of ${r.total}: <strong>${money(r.amountCents / 100)}</strong></div><div class="fallback-mono">${esc(r.identifiers.join(', '))}</div><div>${esc(r.memo)}</div><button type="button" class="btn-pay" data-action="pay-zelle" data-request="${r.index}" ${vm.ready ? '' : 'disabled'}>Copy payment ${r.index}</button></div>`).join('')}</div>` : '';
     if (method === 'venmo') {
-      const label = s.paymentBusy ? 'Opening Venmo…' : vm.ready ? `Pay ${money(vm.total)} with Venmo` : 'Enter details to pay';
-      return `${requestSummary || `<button type="button" class="btn-pay" data-action="pay-venmo" ${vm.ready && !s.paymentBusy ? '' : 'disabled'}>${label}</button>`}
-        ${state.venmoFallback[key] ? `<div class="fallback"><strong>Finish in Venmo</strong><p>Pay <strong>${money(vm.total)}</strong> to <a href="https://venmo.com/u/${VENMO_USERNAME}" target="_blank" rel="noopener">@${VENMO_USERNAME}</a>.</p><p>Paste this payment note:</p><div class="fallback-mono" data-role="venmo-note">${esc(vm.venmoNote)}</div><button type="button" class="copy-btn" data-action="copy" data-value-role="venmo-note">Copy note</button><p>DukeDrop does not confirm payment.</p></div>` : ''}`;
+      const label = s.paymentBusy ? 'Saving order…' : vm.ready ? (vm.total === 0 ? 'Submit free order' : 'Save order & open Venmo') : 'Enter details to pay';
+      if (state.venmoFallback[key] && vm.total === 0) return `<div class="fallback"><strong>Order saved · no payment due</strong><p>This order has a $0.00 balance.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
+      if (state.venmoFallback[key]) return `<div class="fallback"><strong>Order saved · one payment only</strong><p>Send <strong>${money(vm.total)}</strong> as a single payment to <a href="${VENMO_PROFILE_URL}" target="_blank" rel="noopener">@${VENMO_USERNAME}</a>.</p><button type="button" class="copy-btn" data-action="copy" data-value="${esc(vm.total.toFixed(2))}">Copy amount</button><a class="btn-pay venmo-profile-link" href="${VENMO_PROFILE_URL}" target="_blank" rel="noopener">Open Venmo <span aria-hidden="true">↗</span></a><p>In Venmo, enter the amount above and add this note:</p><div class="fallback-mono" data-role="venmo-note">${esc(vm.venmoNote)}</div><button type="button" class="copy-btn" data-action="copy" data-value-role="venmo-note">Copy payment note</button><p>Do not split this order into separate payments. Payment is not confirmed until DukeDrop verifies it.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
+      return `<button type="button" class="btn-pay" data-action="pay-venmo" ${vm.ready && !s.paymentBusy ? '' : 'disabled'}>${label}</button>`;
     }
     if (method === 'zelle') {
       const label = vm.ready ? `Pay ${money(vm.total)} with Zelle` : 'Enter details to pay with Zelle';
@@ -457,6 +464,7 @@ if (typeof document !== 'undefined') {
   function render() {
     const key = state.active;
     app.innerHTML = `${tabsHtml()}${cardHtml(key)}`;
+    if (state[key].saved || state[key].paymentBusy) app.querySelectorAll('[data-field], [data-action="size"], [data-action="source"], [data-action="mode"], [data-action="qty-dec"], [data-action="qty-inc"], [data-action="paymethod"]').forEach(control => { control.disabled = true; });
   }
 
   // Cheap refresh of computed text/attributes without touching input elements,
@@ -539,6 +547,16 @@ if (typeof document !== 'undefined') {
     const key = state.active;
     const action = el.dataset.action;
 
+    if (state[key].saved && ['paymethod','size','source','mode','qty-dec','qty-inc'].includes(action)) return;
+
+    if (action === 'new-order') {
+      state[key] = makeServiceState(key);
+      state.venmoFallback[key] = false;
+      state.zelleFallback[key] = false;
+      render();
+      return;
+    }
+
     if (action === 'order-type') { state.active = el.dataset.type === 'bigdrop' ? 'bigdrop' : 'express'; render(); return; }
     if (action === 'size') { state[key].size = el.dataset.size; render(); return; }
     if (action === 'tab') { state.active = el.dataset.service; render(); return; }
@@ -560,22 +578,22 @@ if (typeof document !== 'undefined') {
     }
     if (action === 'pay-venmo') {
       const vm = buildVM(key);
-      if (!vm.ready || state[key].paymentBusy) return;
-      // Reserve a window directly in the click gesture before awaiting order storage;
-      // browsers otherwise block the Venmo handoff after the network request.
-      const venmoWindow = window.open('about:blank', '_blank');
+      if (!vm.ready || state[key].paymentBusy || state[key].saved) return;
+      const paymentOrder = { ...order(key) };
+      // Reserve one tab during the user gesture. Open the stable Venmo profile
+      // after saving; the old prefilled transaction URL is undocumented and
+      // can behave inconsistently across app/browser handoffs.
+      const venmoWindow = vm.total > 0 ? window.open('about:blank', '_blank') : null;
       if (venmoWindow) venmoWindow.opener = null;
       state[key].paymentBusy = true;
       render();
-      if (!await saveOrder(key)) {
+      if (!await saveOrder(key, paymentOrder)) {
         venmoWindow?.close();
         state[key].paymentBusy = false;
         render();
         return;
       }
-      const link = venmoLink(order(key));
-      copy(link.note, () => {});
-      if (venmoWindow) venmoWindow.location.replace(link.deepLink);
+      if (venmoWindow) venmoWindow.location.replace(VENMO_PROFILE_URL);
       state.venmoFallback[key] = true;
       state[key].paymentBusy = false;
       render();
@@ -594,17 +612,27 @@ if (typeof document !== 'undefined') {
     }
   });
 
-  async function saveOrder(key) {
+  async function saveOrder(key, orderSnapshot = { ...order(key) }) {
     try {
       const configResponse = await fetch('/api/config');
-      if (configResponse.status === 404 && ['localhost', '127.0.0.1'].includes(location.hostname)) return true;
+      if (configResponse.status === 404 && ['localhost', '127.0.0.1'].includes(location.hostname)) {
+        state[key].savedOrder = orderSnapshot;
+        state[key].saved = true;
+        return true;
+      }
       if (!configResponse.ok) throw new Error('Order storage configuration is unavailable.');
       const config = await configResponse.json();
-      if (!config.orderStorageEnabled) return true;
-      const o = order(key);
+      const o = { ...orderSnapshot };
+      if (!config.orderStorageEnabled) {
+        state[key].savedOrder = o;
+        state[key].saved = true;
+        return true;
+      }
       if (state[key].saved) return true;
       const response = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
       if (!response.ok) throw new Error('Order could not be saved. Please contact DukeDrop.');
+      const saved = await response.json();
+      state[key].savedOrder = { ...o, orderId: saved.id };
       state[key].saved = true;
       return true;
     } catch {
@@ -619,6 +647,7 @@ if (typeof document !== 'undefined') {
   app.addEventListener('input', (e) => {
     const field = e.target.dataset.field;
     if (!field) return;
+    if (state[state.active].saved || state[state.active].paymentBusy) { render(); return; }
     if (field === 'promoCode') { state.promoCode = e.target.value; updateDerived(); return; }
     const key = state.active;
     if (field === 'qty') { setQty(key, e.target.value); updateDerived(); return; }
