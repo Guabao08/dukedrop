@@ -13,6 +13,10 @@ To finish connecting production:
 
 For a new project or a reset, run `supabase/schema.sql` first and `supabase/tracking-followup.sql` second in the Supabase SQL Editor. The public order API validates fields and recomputes amounts from server-side pricing and promo rules. The service role key remains server-only.
 
+## Operations dashboard
+
+The dashboard includes active-delivery, payment-review, tracking-follow-up, and completed-order queues. Search and service/status/payment filters combine within each queue. Open an order for contact, destination, locker, tracking, and payment details, then save status changes explicitly. Opening an SMS draft does not mark it sent; use “Mark as sent” after sending the message. Payment review excludes zero-dollar and closed orders.
+
 ## Tracking follow-up funnel
 
 After Supabase is configured and order storage is enabled, orders without tracking can be queued with a due time 24 hours after checkout. The dashboard can show that queue and offer a prefilled SMS link for staff to send manually. This repository does not send unattended SMS automatically. Before enabling a scheduled Twilio (or other SMS provider) sender, configure the SMS provider and approved messaging/consent language, then add its credentials as server-only environment variables and schedule a sender to select due `pending` rows and mark sent attempts. Never expose provider credentials in the frontend.

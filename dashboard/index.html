@@ -1,47 +1,30 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>DukeDrop · Orders</title>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow"><title>Operations · DukeDrop</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&display=swap">
-  <link rel="stylesheet" href="../styles.css">
-  <style>
-    main{max-width:1100px}.dash-card{background:#fff;border-radius:20px;padding:24px;box-shadow:0 10px 30px -18px #1b272355}.dash-tools{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}.dash-tools input,.dash-tools select,.login input{padding:12px;border:1px solid #ddd;border-radius:10px;font:inherit}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:12px;border-bottom:1px solid #eee;white-space:nowrap}td select{padding:8px;border-radius:8px;border:1px solid #ddd}.muted{color:#667}.hidden{display:none}.login{max-width:420px}.stats{display:flex;gap:12px;flex-wrap:wrap}.stat{background:#f4f6f2;border-radius:12px;padding:12px 16px}.stat strong{display:block;font-size:22px}.error{color:#b42318}
-  </style>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800;900&display=swap">
+  <link rel="stylesheet" href="./dashboard.css">
 </head>
 <body>
-  <header>
-    <a class="brand" href="../index.html"><span aria-hidden="true">◆</span> DukeDrop</a>
-    <nav class="top-nav"><a href="../index.html">Order</a><a href="../faq.html">FAQ</a><a class="is-current" href="./">Dashboard</a></nav>
-  </header>
-  <main>
-    <section class="hero"><small>INTERNAL TOOLS</small><h1>Orders</h1><p>Order activity and tracking follow-ups.</p></section>
-    <section id="login" class="dash-card login">
-      <h2>Staff sign in</h2>
-      <p class="muted">Enter the dashboard password.</p>
-      <form id="sign-in-form">
-        <label for="password">Password</label>
-        <input id="password" type="password" autocomplete="current-password" required>
-        <button id="sign-in" class="btn-pay" type="submit">Sign in</button>
-      </form>
-      <p id="login-message" class="error" role="status"></p>
-    </section>
-    <section id="dashboard" class="dash-card hidden">
-      <div class="stats" id="stats"></div>
-      <div class="dash-tools">
-        <input id="search" placeholder="Search phone, name, dorm, order #">
-        <select id="status-filter"><option value="">All orders</option><option>payment_started</option><option>received</option><option>in_progress</option><option>completed</option><option>cancelled</option></select>
-        <button id="refresh" class="copy-btn">Refresh</button>
-        <button id="sign-out" class="copy-btn">Sign out</button>
-      </div>
-      <div class="table-wrap">
-        <table><thead><tr><th>Created</th><th>Customer</th><th>Order</th><th>Due</th><th>Payment</th><th>Order status</th><th>Tracking follow-up</th></tr></thead><tbody id="orders"></tbody></table>
-      </div>
-      <p id="message" class="muted" role="status"></p>
-    </section>
-  </main>
+  <section id="login" class="login-screen">
+    <div class="login-story"><a class="brand" href="/">◆ DukeDrop<span>OPERATIONS</span></a><div><p class="eyebrow">A LITTLE LESS RUNNING AROUND.</p><h1>Every package.<br>Every next step.<br>One place.</h1><p>Your desk for campus deliveries, payments, and the details that keep things moving.</p></div><span class="story-footer">Built for the people behind the drop.</span></div>
+    <div class="login-form-wrap"><form id="sign-in-form" class="login-card"><span class="mini-mark" aria-hidden="true">◆</span><p class="eyebrow">TEAM ACCESS</p><h2>Welcome back.</h2><p class="muted">Sign in to the DukeDrop order desk.</p><label for="password">Dashboard password</label><input id="password" type="password" autocomplete="current-password" required placeholder="Enter your password"><button id="sign-in" class="button primary" type="submit">Open the dashboard <span aria-hidden="true">→</span></button><p id="login-message" class="form-message" role="status">Checking your session…</p><a class="quiet-link" href="/">← Back to DukeDrop</a></form></div>
+  </section>
+  <div id="dashboard" class="workspace" hidden>
+    <aside class="sidebar"><a class="brand" href="/">◆ DukeDrop<span>OPERATIONS</span></a><p class="nav-label">WORKSPACE</p><nav id="queue-nav" aria-label="Order queues"><button data-queue="all" class="nav-item active" aria-current="page">All orders <span id="count-all">0</span></button><button data-queue="active" class="nav-item">Active deliveries <span id="count-active">0</span></button><button data-queue="unpaid" class="nav-item">Payment review <span id="count-unpaid">0</span></button><button data-queue="followup" class="nav-item">Tracking follow-ups <span id="count-followup">0</span></button><button data-queue="completed" class="nav-item">Completed <span id="count-completed">0</span></button></nav><div class="sidebar-bottom"><a href="/" target="_blank" rel="noopener">Open order form ↗</a><div class="team"><span class="avatar">DD</span><div><strong>DukeDrop team</strong><small>Staff workspace</small></div><button id="sign-out" class="icon-button" aria-label="Sign out" title="Sign out">↪</button></div></div></aside>
+    <main class="main"><header class="topbar"><span>Workspace <span class="slash">/</span> <strong>Order desk</strong></span><span id="today"></span></header>
+      <section class="page-heading"><div><p class="eyebrow">CAMPUS OPERATIONS</p><h1>Let’s get things delivered.</h1><p class="muted">A clear view of what’s here, what’s paid, and what needs a follow-up.</p></div><button id="refresh" class="button">↻ <span>Refresh orders</span></button></section>
+      <section id="stats" class="stats" aria-label="Order summary"></section>
+      <section class="order-panel"><div class="panel-heading"><div><h2 id="queue-title">All orders</h2><p id="queue-description" class="muted">Your complete order history, newest first.</p></div><span class="live-label"><i></i><span id="sync-state">Loading orders</span></span></div>
+        <div class="filters"><label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search name, dorm, phone, tracking or order ID" aria-label="Search orders"></label><label class="select-filter"><span>Service</span><select id="service-filter"><option value="">All services</option><option value="express">Express</option><option value="pickup">Pickup</option><option value="returns">Returns</option><option value="bigdrop">Big Drop</option></select></label><label class="select-filter"><span>Status</span><select id="status-filter"><option value="">All statuses</option><option value="payment_started">Payment started</option><option value="received">Received</option><option value="in_progress">In progress</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></label><label class="select-filter"><span>Payment</span><select id="payment-filter"><option value="">All payments</option><option value="unconfirmed">Unconfirmed</option><option value="paid">Paid</option><option value="refunded">Refunded</option></select></label></div>
+        <p id="message" class="notice" role="status" hidden></p><div class="table-wrap"><table><thead><tr><th>Order / customer</th><th>Destination</th><th>Service</th><th>Payment</th><th>Status</th><th><span class="sr-only">View details</span></th></tr></thead><tbody id="orders"></tbody></table></div><div id="empty" class="empty" hidden></div><footer class="table-footer"><span id="result-count"></span><button id="reset-filters" class="text-button">Clear filters</button></footer>
+      </section><p class="footnote">Payment status is confirmed by your team. Opening a payment app does not confirm payment.</p>
+    </main>
+  </div>
+  <dialog id="order-dialog" aria-labelledby="detail-title"><div class="detail-header"><div><p class="eyebrow">ORDER DETAILS</p><h2 id="detail-title">Order</h2></div><button id="close-details" class="icon-button" aria-label="Close order details">✕</button></div><div id="order-details"></div></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
   <script type="module" src="./dashboard.js"></script>
 </body>
 </html>
