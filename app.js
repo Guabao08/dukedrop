@@ -6,7 +6,7 @@ export const VENMO_USERNAME = 'dukedrop';
 export const ZELLE_DISPLAY = '(469) 964-9545';
 export const ZELLE_DIGITS = ZELLE_DISPLAY.replace(/\D/g, '');
 export const CONSENT_PHONE = '2019160008';
-export const EXPRESS_ADDRESS = '1610 Valley Creek Dr., Hillsborough, NC 27278';
+export const EXPRESS_ADDRESS = '927 Green Street, Durham, NC 27701';
 export const CONSENT_AUTHORIZERS = 'Sean Pao, Dylan Kim, or Timothy Mei';
 export const INSTAGRAM_HANDLE = 'dukedrop_';
 // Venmo's current help documentation describes a 280-character payment note.
@@ -14,9 +14,6 @@ export const INSTAGRAM_HANDLE = 'dukedrop_';
 // documented Venmo limit for both paths to guarantee copy/paste parity.
 export const PAYMENT_MEMO_MAX_LENGTH = 280;
 export const PROMO_CODES = { AUSTIN20: 20, FREEDROP: 100, COMPEDROP: 100 };
-// Turn on only after Supabase schema and Vercel credentials are configured.
-const ORDER_STORAGE_ENABLED = false;
-
 export const SIZE_LIMIT_NOTE = "Size limit: nothing bigger than a mini microwave. Bigger than that — furniture, TVs, chairs, and the like — goes through Big Drop instead.";
 
 export const SERVICE_DETAILS = {
@@ -24,7 +21,7 @@ export const SERVICE_DETAILS = {
     eyebrow: 'Express',
     title: 'Express',
     rateHeader: 'Packages per order',
-    intro: "Ship to our DukeDrop address to skip the mailroom's 48-hour hold — we bring it straight to your door.",
+    intro: '',
     memoPrefix: 'EXPRESS',
     callout: '',
     unit: 'package',
@@ -569,12 +566,15 @@ if (typeof document !== 'undefined') {
   });
 
   async function saveOrder(key) {
-    if (!ORDER_STORAGE_ENABLED) return true;
-    const o = order(key);
-    if (state[key].saved) return true;
     try {
+      const configResponse = await fetch('/api/config');
+      if (configResponse.status === 404 && ['localhost', '127.0.0.1'].includes(location.hostname)) return true;
+      if (!configResponse.ok) throw new Error('Order storage configuration is unavailable.');
+      const config = await configResponse.json();
+      if (!config.orderStorageEnabled) return true;
+      const o = order(key);
+      if (state[key].saved) return true;
       const response = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
-      if (response.status === 503) return true; // Supabase is an optional setup step for now.
       if (!response.ok) throw new Error('Order could not be saved. Please contact DukeDrop.');
       state[key].saved = true;
       return true;

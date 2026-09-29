@@ -32,5 +32,10 @@ revoke all on public.orders from anon, authenticated;
 grant select, update on public.orders to authenticated;
 grant usage on schema public to authenticated;
 
-create policy "Staff can view orders" on public.orders for select to authenticated using (auth.uid() is not null);
-create policy "Staff can update order status" on public.orders for update to authenticated using (auth.uid() is not null) with check (auth.uid() is not null);
+-- Only accounts explicitly granted the staff app_metadata claim can access customer data.
+-- Set app_metadata.role = "staff" for each staff account from the Supabase dashboard.
+create policy "Staff can view orders" on public.orders for select to authenticated
+  using (((select auth.jwt())->'app_metadata'->>'role') = 'staff');
+create policy "Staff can update order status" on public.orders for update to authenticated
+  using (((select auth.jwt())->'app_metadata'->>'role') = 'staff')
+  with check (((select auth.jwt())->'app_metadata'->>'role') = 'staff');

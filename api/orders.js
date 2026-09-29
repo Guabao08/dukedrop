@@ -16,7 +16,7 @@ function totalFor(o) {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return res.status(503).json({ error: 'Order storage is not configured' });
+  if (process.env.ORDER_STORAGE_ENABLED !== 'true' || !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return res.status(503).json({ error: 'Order storage is not configured' });
   const o = req.body || {};
   if (!validOrder(o)) return res.status(400).json({ error: 'Please complete the required order details.' });
   const row = {

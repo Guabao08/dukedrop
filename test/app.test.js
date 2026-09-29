@@ -22,7 +22,7 @@ test('Vercel publishes only the built frontend artifact', async () => {
     child.on('error', reject); child.on('exit', code => code === 0 ? resolve() : reject(new Error(`build exited ${code}`)));
   });
   const files = await readdir(new URL('../dist/', import.meta.url));
-  assert.deepEqual(files.sort(), ['app.js', 'dashboard', 'faq.html', 'index.html', 'styles.css', 'videos']);
+  assert.deepEqual(files.sort(), ['app.js', 'dashboard', 'faq.html', 'index.html', 'privacy.html', 'styles.css', 'terms.html', 'videos']);
   assert.ok((await readdir(new URL('../dist/dashboard/', import.meta.url))).includes('dashboard.js'));
   for (const file of files) assert.doesNotMatch(file, /server|package|test|json/);
   assert.deepEqual((await readdir(new URL('../dist/videos/', import.meta.url))).sort(), ['duke-drop-1.mp4', 'duke-drop-2.mp4', 'duke-drop-3.mp4', 'duke-drop-4.mp4']);
@@ -222,7 +222,7 @@ test('Returns always remains one request and does not expose tracking', () => {
 });
 
 test('Express drop-off address matches the imported design', () => {
-  assert.equal(EXPRESS_ADDRESS, '1610 Valley Creek Dr., Hillsborough, NC 27278');
+  assert.equal(EXPRESS_ADDRESS, '927 Green Street, Durham, NC 27701');
 });
 
 test('Big Drop is a flat $12 (discounted from $15) per item and keeps its rate-card highlight', () => {

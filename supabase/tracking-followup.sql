@@ -10,7 +10,7 @@ alter table public.orders add column if not exists base_service text not null de
 alter table public.orders add column if not exists order_size text not null default 'standard' check (order_size in ('standard','bigdrop'));
 
 create or replace function public.set_tracking_followup()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = '' as $$
 begin
   if new.base_service <> 'returns' and coalesce(nullif(trim(new.tracking), ''), '') = '' then
     new.tracking_followup_status := 'pending';
