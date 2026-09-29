@@ -52,10 +52,19 @@ function render() {
   document.querySelectorAll('[data-queue]').forEach(button => { const active = button.dataset.queue === queue; button.classList.toggle('active', active); if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
   $('#sync-state').textContent = lastSync ? `Updated ${lastSync.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'Loading orders';
   const rows = filterOrders(allOrders, { queue, search: $('#search').value, service: $('#service-filter').value, status: $('#status-filter').value, payment: $('#payment-filter').value });
-  $('#orders').innerHTML = rows.map(order => `<tr><td><div class="order-cell"><span class="order-mark" aria-hidden="true">◇</span><div><button class="order-link" data-open="${esc(order.id)}">${esc(order.recipient_name || order.phone || 'View order')}</button><small>#${esc(order.id.slice(0, 8))} · ${esc(date(order.created_at))}</small></div></div></td><td data-label="Destination"><strong>${esc(order.dorm || 'Not provided')}</strong><small>Room ${esc(order.room || '—')}</small></td><td data-label="Service"><strong>${esc(SERVICE_LABELS[order.service] || order.service)}</strong><small>${esc(order.quantity)} ${Number(order.quantity) === 1 ? 'item' : 'items'}${order.service === 'bigdrop' ? ` · ${esc(SERVICE_LABELS[order.base_service] || '')}` : ''}</small></td><td data-label="Payment"><strong>${money(order.amount_due)}</strong><small>${badge(order.payment_status, PAYMENT_LABELS)}</small></td><td data-label="Status">${badge(order.order_status)}${needsFollowup(order) ? '<small class="due-label">Tracking follow-up due</small>' : ''}</td><td><button class="icon-button" data-open="${esc(order.id)}" aria-label="View order ${esc(order.id.slice(0,8))}">↗</button></td></tr>`).join('');
+  const sort = $('#sort-orders').value;
+  const time = order => new Date(order.created_at || 0).getTime() || 0;
+  const collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+  rows.sort((a, b) => sort === 'oldest' ? time(a) - time(b)
+    : sort === 'customer' ? collator.compare(a.recipient_name || a.phone || '', b.recipient_name || b.phone || '')
+      : sort === 'room' ? collator.compare(`${a.dorm || ''} ${a.room || ''}`, `${b.dorm || ''} ${b.room || ''}`)
+        : sort === 'unpaid' ? Number(b.payment_status === 'unconfirmed' && Number(b.amount_due) > 0) - Number(a.payment_status === 'unconfirmed' && Number(a.amount_due) > 0) || Number(b.amount_due || 0) - Number(a.amount_due || 0) || time(b) - time(a)
+          : time(b) - time(a));
+  $('#orders').innerHTML = rows.map(order => `<tr><td data-label="Order / customer"><div class="order-cell"><span class="order-mark" aria-hidden="true">◇</span><div class="order-primary"><button class="order-link" data-open="${esc(order.id)}">${esc(order.recipient_name || 'Customer')}</button><a class="order-phone" href="tel:${esc(order.phone || '')}">${esc(order.phone || 'No phone')}</a><small>#${esc(order.id.slice(0, 8))} · ${esc(date(order.created_at))}</small></div></div></td><td data-label="Destination"><strong>${esc(order.dorm || 'Not provided')}</strong><small>Room ${esc(order.room || '—')}</small></td><td data-label="Service"><strong>${esc(SERVICE_LABELS[order.service] || order.service)}</strong><small>${esc(order.quantity)} ${Number(order.quantity) === 1 ? 'item' : 'items'}${order.service === 'bigdrop' ? ` · ${esc(SERVICE_LABELS[order.base_service] || '')}` : ''}</small></td><td data-label="Payment"><strong>${money(order.amount_due)}</strong><small>${badge(order.payment_status, PAYMENT_LABELS)}</small></td><td data-label="Status">${badge(order.order_status)}${needsFollowup(order) ? '<small class="due-label">Tracking follow-up due</small>' : ''}</td><td data-label="Details"><button class="open-order" data-open="${esc(order.id)}" aria-label="Open order ${esc(order.id.slice(0,8))}">Open <span aria-hidden="true">↗</span></button></td></tr>`).join('');
   $('#empty').hidden = rows.length > 0;
   $('#empty').innerHTML = `<span class="empty-symbol" aria-hidden="true">◇</span><h3>${allOrders.length ? 'Nothing in this view.' : 'Ready for the first drop.'}</h3><p>${allOrders.length ? 'Try another queue or clear your filters to see more orders.' : 'New orders will appear here when customers start checkout.'}</p>`;
-  $('#result-count').textContent = `${rows.length} of ${allOrders.length} orders`;
+  $('#result-count').textContent = `Showing ${rows.length} of ${allOrders.length} orders`;
+  $('#reset-filters').hidden = !($('#search').value || $('#service-filter').value || $('#status-filter').value || $('#payment-filter').value || sort !== 'newest');
 }
 function field(label, value, wide = false) { return `<dl${wide ? ' class="wide"' : ''}><dt>${esc(label)}</dt><dd>${esc(value || 'Not provided')}</dd></dl>`; }
 function options(labels, selected) { return Object.entries(labels).map(([value, label]) => `<option value="${value}"${value === selected ? ' selected' : ''}>${label}</option>`).join(''); }
@@ -105,8 +114,8 @@ setInterval(async () => { if (!document.hidden && !$('#dashboard').hidden && !se
 $('#sync-carriers').onclick = () => syncCarriers(true);
 $('#queue-nav').onclick = event => { const button = event.target.closest('[data-queue]'); if (button) { queue = button.dataset.queue; render(); } };
 $('#search').oninput = render;
-for (const id of ['service-filter', 'status-filter', 'payment-filter']) $(`#${id}`).onchange = render;
-$('#reset-filters').onclick = () => { for (const id of ['search', 'service-filter', 'status-filter', 'payment-filter']) $(`#${id}`).value = ''; render(); };
+for (const id of ['service-filter', 'status-filter', 'payment-filter', 'sort-orders']) $(`#${id}`).onchange = render;
+$('#reset-filters').onclick = () => { for (const id of ['search', 'service-filter', 'status-filter', 'payment-filter']) $(`#${id}`).value = ''; $('#sort-orders').value = 'newest'; render(); };
 function openOrder(event) { const button = event.target.closest('[data-open]'); if (!button) return; detailOpener = button; selectedId = button.dataset.open; renderDetails(); $('#order-dialog').showModal(); }
 $('#orders').onclick = openOrder; $('#pickup-orders').onclick = openOrder;
 $('#close-details').onclick = () => $('#order-dialog').close();
