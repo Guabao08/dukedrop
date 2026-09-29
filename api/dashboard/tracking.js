@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     if (req.body?.action === 'sync') return res.status(200).json(await syncTracking());
     const { order_id, tracking_code, carrier = '', items_count = 1 } = req.body || {};
     let carrierToken;
-    try { carrierToken = carrierName(carrier); } catch { return res.status(400).json({ error: 'Enter the carrier (UPS, USPS, FedEx, DHL Express, or a Shippo carrier token).' }); }
+    try { carrierToken = carrierName(carrier); } catch { return res.status(400).json({ error: 'Enter the carrier (UPS, USPS, FedEx, DHL Express, or an EasyPost carrier name).' }); }
     const code = String(tracking_code || '').replace(/\s/g, '').toUpperCase();
     if (!uuid(order_id) || !/^[A-Z0-9-]{8,64}$/.test(code) || typeof carrier !== 'string' || carrier.length > 60 || !Number.isInteger(items_count) || items_count < 1 || items_count > 50) return res.status(400).json({ error: 'Enter a carrier tracking number and a valid item count.' });
     const [order] = await storage(`orders?id=eq.${order_id}&select=id,service,base_service,quantity,order_status`);

@@ -30,7 +30,7 @@ async function load() {
     try { const configResponse = await fetch('/api/dashboard/tracking', { cache: 'no-store' }); if (configResponse.ok) { trackingConfigured = Boolean((await configResponse.json()).configured); } } catch { trackingConfigured = false; }
     $('#tracking-connection').textContent = trackingConfigured ? 'Carrier integration configured' : 'Carrier connection needed';
     $('#sync-carriers').disabled = !trackingConfigured || syncingCarriers;
-    if (!trackingConfigured) $('#tracking-message').textContent = 'Live updates need an Shippo connection. Tracking details can be saved now.';
+    if (!trackingConfigured) $('#tracking-message').textContent = 'Live updates need an EasyPost connection. Tracking details can be saved now.';
     lastSync = new Date(); showDashboard(); notice(); render();
     if (selectedId && !saving) renderDetails();
   } catch (error) {

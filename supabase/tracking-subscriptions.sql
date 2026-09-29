@@ -1,4 +1,4 @@
--- Share one Shippo registration for a carrier/number reused across order rows.
+-- Share one EasyPost tracker registration for a carrier/number reused across order rows.
 create table if not exists public.tracking_subscriptions (
   id text primary key,
   registered boolean not null default false,
