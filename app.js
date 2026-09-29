@@ -197,12 +197,33 @@ export function validateOrder(o) {
   return { valid: missing.length === 0, missing };
 }
 
-export function venmoLink(o, request) {
+function venmoNote(o) {
+  const full = buildMemo(o);
+  if (full.length <= PAYMENT_MEMO_MAX_LENGTH) return full;
+  const identifiers = o.service === 'returns' ? [] : normalizeTrackingNumbers(o.tracking);
+  if (!identifiers.length) return `${full.slice(0, PAYMENT_MEMO_MAX_LENGTH - 1).trimEnd()}…`;
+  const trackingHeader = ` — ${o.carrier || '[Carrier]'} tracking:`;
+  const fixed = buildMemo({ ...o, carrier: '', tracking: '' });
+  const kept = [];
+  const makeNote = (ids, remaining = 0) => `${fixed}${trackingHeader}${ids.length ? ` ${ids.join(', ')}` : ''}${remaining ? ` +${remaining} more` : ''}`;
+  for (const identifier of identifiers) {
+    const candidate = [...kept, identifier];
+    if (makeNote(candidate).length > PAYMENT_MEMO_MAX_LENGTH) break;
+    kept.push(identifier);
+  }
+  let note = makeNote(kept, identifiers.length - kept.length);
+  while (note.length > PAYMENT_MEMO_MAX_LENGTH && kept.length) {
+    kept.pop();
+    note = makeNote(kept, identifiers.length - kept.length);
+  }
+  return note.length <= PAYMENT_MEMO_MAX_LENGTH ? note : `${full.slice(0, PAYMENT_MEMO_MAX_LENGTH - 1).trimEnd()}…`;
+}
+
+export function venmoLink(o) {
   const v = validateOrder(o);
   if (!v.valid) throw new Error(`Missing: ${v.missing.join(', ')}`);
-  const payment = request || splitPaymentRequests(o)[0];
-  const amount = payment.amount;
-  const note = payment.memo;
+  const amount = calculateOrderTotal(o.service, o.quantity, o.promoCode).toFixed(2);
+  const note = venmoNote(o);
   return {
     amount,
     note,
@@ -222,7 +243,7 @@ if (typeof document !== 'undefined') {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   const makeServiceState = (service) => ({
-    qty: 1, dorm: '', room: '', carrier: '', tracking: '', payMethod: 'venmo',
+    qty: 1, dorm: '', room: '', carrier: '', tracking: '', payMethod: 'venmo', paymentBusy: false,
     ...(service === 'pickup' || service === 'bigdrop' ? { source: 'mailbox', mailroom: '', box: '', lockerLocation: '', locker: '', name: '' } : {}),
     size: 'standard',
     ...(service === 'bigdrop' ? { mode: 'ship' } : {}),
@@ -265,7 +286,7 @@ if (typeof document !== 'undefined') {
     return {
       key, detail, tierIndex, total, subText: promoPercent ? `${s.qty} × ${money(tier.rate)} · ${promoPercent}% off (${money(subtotal)} → ${money(total)})` : `${s.qty} × ${money(tier.rate)}`,
       promoPercent, promoEntered: state.promoCode.trim(), promoHint: promoMessage(state.promoCode, s),
-      memo: buildMemo(o), ready: v.valid, missing: v.missing,
+      memo: buildMemo(o), venmoNote: venmoNote(o), ready: v.valid, missing: v.missing,
       isLocker, showConsent, consentText, pickupStyle,
       requests: (() => { try { return splitPaymentRequests(o); } catch { return []; } })(),
       zelleLine: zelleLine(o),
@@ -361,11 +382,11 @@ if (typeof document !== 'undefined') {
     const s = state[key];
     const method = s.payMethod;
     const requests = vm.requests;
-    const requestSummary = requests.length > 1 ? `<div class="payment-requests"><strong>Payment requests</strong>${requests.map((r) => `<div class="payment-request"><div>Payment ${r.index} of ${r.total}: <strong>${money(r.amountCents / 100)}</strong></div><div class="fallback-mono">${esc(r.identifiers.join(', '))}</div><div>${esc(r.memo)}</div><button type="button" class="btn-pay" data-action="${method === 'venmo' ? 'pay-venmo' : 'pay-zelle'}" data-request="${r.index}" ${vm.ready ? '' : 'disabled'}>${method === 'venmo' ? 'Open' : 'Copy'} payment ${r.index}</button></div>`).join('')}</div>` : '';
+    const requestSummary = method === 'zelle' && requests.length > 1 ? `<div class="payment-requests"><strong>Payment requests</strong>${requests.map((r) => `<div class="payment-request"><div>Payment ${r.index} of ${r.total}: <strong>${money(r.amountCents / 100)}</strong></div><div class="fallback-mono">${esc(r.identifiers.join(', '))}</div><div>${esc(r.memo)}</div><button type="button" class="btn-pay" data-action="${method === 'venmo' ? 'pay-venmo' : 'pay-zelle'}" data-request="${r.index}" ${vm.ready ? '' : 'disabled'}>${method === 'venmo' ? 'Open' : 'Copy'} payment ${r.index}</button></div>`).join('')}</div>` : '';
     if (method === 'venmo') {
-      const label = vm.ready ? `Pay ${money(vm.total)} with Venmo` : 'Enter details to pay';
-      return `${requestSummary || `<button type="button" class="btn-pay" data-action="pay-venmo" ${vm.ready ? '' : 'disabled'}>${label}</button>`}
-        ${state.venmoFallback[key] ? `<div class="fallback"><strong>Finish in Venmo</strong><p>Pay <strong>${money(vm.total)}</strong> to <a href="https://venmo.com/u/${VENMO_USERNAME}" target="_blank" rel="noopener">@${VENMO_USERNAME}</a>.</p><p>Paste this payment note:</p><div class="fallback-mono" data-role="venmo-note">${esc(vm.memo)}</div><button type="button" class="copy-btn" data-action="copy" data-value-role="venmo-note">Copy note</button><p>DukeDrop does not confirm payment.</p></div>` : ''}`;
+      const label = s.paymentBusy ? 'Opening Venmo…' : vm.ready ? `Pay ${money(vm.total)} with Venmo` : 'Enter details to pay';
+      return `${requestSummary || `<button type="button" class="btn-pay" data-action="pay-venmo" ${vm.ready && !s.paymentBusy ? '' : 'disabled'}>${label}</button>`}
+        ${state.venmoFallback[key] ? `<div class="fallback"><strong>Finish in Venmo</strong><p>Pay <strong>${money(vm.total)}</strong> to <a href="https://venmo.com/u/${VENMO_USERNAME}" target="_blank" rel="noopener">@${VENMO_USERNAME}</a>.</p><p>Paste this payment note:</p><div class="fallback-mono" data-role="venmo-note">${esc(vm.venmoNote)}</div><button type="button" class="copy-btn" data-action="copy" data-value-role="venmo-note">Copy note</button><p>DukeDrop does not confirm payment.</p></div>` : ''}`;
     }
     if (method === 'zelle') {
       const label = vm.ready ? `Pay ${money(vm.total)} with Zelle` : 'Enter details to pay with Zelle';
@@ -539,14 +560,24 @@ if (typeof document !== 'undefined') {
     }
     if (action === 'pay-venmo') {
       const vm = buildVM(key);
-      if (!vm.ready) return;
-      const requests = buildVM(key).requests;
-      if (!await saveOrder(key)) return;
-      const link = venmoLink(order(key), requests[(Number(el.dataset.request) || 1) - 1]);
-      const payment = requests[(Number(el.dataset.request) || 1) - 1];
-      copy(payment.memo, () => {});
-      window.open(link.deepLink, '_blank', 'noopener');
+      if (!vm.ready || state[key].paymentBusy) return;
+      // Reserve a window directly in the click gesture before awaiting order storage;
+      // browsers otherwise block the Venmo handoff after the network request.
+      const venmoWindow = window.open('about:blank', '_blank');
+      if (venmoWindow) venmoWindow.opener = null;
+      state[key].paymentBusy = true;
+      render();
+      if (!await saveOrder(key)) {
+        venmoWindow?.close();
+        state[key].paymentBusy = false;
+        render();
+        return;
+      }
+      const link = venmoLink(order(key));
+      copy(link.note, () => {});
+      if (venmoWindow) venmoWindow.location.replace(link.deepLink);
       state.venmoFallback[key] = true;
+      state[key].paymentBusy = false;
       render();
       return;
     }
