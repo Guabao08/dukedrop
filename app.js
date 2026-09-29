@@ -229,12 +229,21 @@ export function venmoLink(o) {
   if (!v.valid) throw new Error(`Missing: ${v.missing.join(', ')}`);
   const amount = calculateOrderTotal(o.service, o.quantity, o.promoCode).toFixed(2);
   const note = venmoNote(o);
+  // Venmo's payment handoff accepts one recipient and one amount/note. Keep
+  // this as a single transaction URL so Venmo cannot interpret the order as
+  // multiple recipients or payment requests.
+  const paymentUrl = new URL('https://venmo.com/');
+  paymentUrl.search = new URLSearchParams({
+    txn: 'pay',
+    recipients: VENMO_USERNAME,
+    amount,
+    note,
+  }).toString();
   return {
     amount,
     note,
     recipient: VENMO_USERNAME,
-    // Use the stable profile route. Peer-to-peer payment query parameters are
-    // not a reliable way to pre-create or prefill a transaction.
+    paymentUrl: paymentUrl.toString(),
     profileUrl: VENMO_PROFILE_URL,
   };
 }
@@ -392,7 +401,7 @@ if (typeof document !== 'undefined') {
     if (method === 'venmo') {
       const label = s.paymentBusy ? 'Saving order…' : vm.ready ? (vm.total === 0 ? 'Submit free order' : 'Save order & open Venmo') : 'Enter details to pay';
       if (state.venmoFallback[key] && vm.total === 0) return `<div class="fallback"><strong>Order saved · no payment due</strong><p>This order has a $0.00 balance.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
-      if (state.venmoFallback[key]) return `<div class="fallback"><strong>Order saved · one payment only</strong><p>Send <strong>${money(vm.total)}</strong> as a single payment to <a href="${VENMO_PROFILE_URL}" target="_blank" rel="noopener">@${VENMO_USERNAME}</a>.</p><button type="button" class="copy-btn" data-action="copy" data-value="${esc(vm.total.toFixed(2))}">Copy amount</button><a class="btn-pay venmo-profile-link" href="${VENMO_PROFILE_URL}" target="_blank" rel="noopener">Open Venmo <span aria-hidden="true">↗</span></a><p>In Venmo, enter the amount above and add this note:</p><div class="fallback-mono" data-role="venmo-note">${esc(vm.venmoNote)}</div><button type="button" class="copy-btn" data-action="copy" data-value-role="venmo-note">Copy payment note</button><p>Do not split this order into separate payments. Payment is not confirmed until DukeDrop verifies it.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
+      if (state.venmoFallback[key]) return `<div class="fallback"><strong>Order saved · one payment only</strong><p>Venmo should open with one payment to <a href="${VENMO_PROFILE_URL}" target="_blank" rel="noopener">@${VENMO_USERNAME}</a>, the total <strong>${money(vm.total)}</strong>, and this order note filled in.</p><a class="btn-pay venmo-profile-link" href="${esc(venmoLink(order(key)).paymentUrl)}" target="_blank" rel="noopener">Open prefilled Venmo payment <span aria-hidden="true">↗</span></a><div class="fallback-mono" data-role="venmo-note">${esc(vm.venmoNote)}</div><button type="button" class="copy-btn" data-action="copy" data-value-role="venmo-note">Copy payment note</button><p>Do not split this order into separate payments. Payment is not confirmed until DukeDrop verifies it.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
       return `<button type="button" class="btn-pay" data-action="pay-venmo" ${vm.ready && !s.paymentBusy ? '' : 'disabled'}>${label}</button>`;
     }
     if (method === 'zelle') {
@@ -580,9 +589,8 @@ if (typeof document !== 'undefined') {
       const vm = buildVM(key);
       if (!vm.ready || state[key].paymentBusy || state[key].saved) return;
       const paymentOrder = { ...order(key) };
-      // Reserve one tab during the user gesture. Open the stable Venmo profile
-      // after saving; the old prefilled transaction URL is undocumented and
-      // can behave inconsistently across app/browser handoffs.
+      // Reserve one tab during the user gesture so mobile browsers can hand
+      // off to Venmo after the one-time order save completes.
       const venmoWindow = vm.total > 0 ? window.open('about:blank', '_blank') : null;
       if (venmoWindow) venmoWindow.opener = null;
       state[key].paymentBusy = true;
@@ -593,7 +601,7 @@ if (typeof document !== 'undefined') {
         render();
         return;
       }
-      if (venmoWindow) venmoWindow.location.replace(VENMO_PROFILE_URL);
+      if (venmoWindow) venmoWindow.location.replace(venmoLink(paymentOrder).paymentUrl);
       state.venmoFallback[key] = true;
       state[key].paymentBusy = false;
       render();
