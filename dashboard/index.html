@@ -1,1 +1,47 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DukeDrop · Orders</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&display=swap"><link rel="stylesheet" href="../styles.css"><style>main{max-width:1100px}.dash-card{background:#fff;border-radius:20px;padding:24px;box-shadow:0 10px 30px -18px #1b272355}.dash-tools{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}.dash-tools input,.dash-tools select,.login input{padding:12px;border:1px solid #ddd;border-radius:10px;font:inherit}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:12px;border-bottom:1px solid #eee;white-space:nowrap}td select{padding:8px;border-radius:8px;border:1px solid #ddd}.muted{color:#667}.hidden{display:none}.login{max-width:420px}.stats{display:flex;gap:12px;flex-wrap:wrap}.stat{background:#f4f6f2;border-radius:12px;padding:12px 16px}.stat strong{display:block;font-size:22px}.error{color:#b42318}</style></head><body><header><a class="brand" href="../index.html"><span aria-hidden="true">◆</span> DukeDrop</a><nav class="top-nav"><a href="../index.html">Order</a><a href="../faq.html">FAQ</a><a class="is-current" href="./">Dashboard</a></nav></header><main><section class="hero"><small>INTERNAL TOOLS</small><h1>Orders</h1><p>Order activity and tracking follow-ups.</p></section><section id="login" class="dash-card login"><h2>Staff sign in</h2><p class="muted">Use an authorized Supabase staff account.</p><label>Email<input id="email" type="email" autocomplete="username"></label><label>Password<input id="password" type="password" autocomplete="current-password"></label><button id="sign-in" class="btn-pay">Sign in</button><p id="login-message" class="error"></p></section><section id="dashboard" class="dash-card hidden"><div class="stats" id="stats"></div><div class="dash-tools"><input id="search" placeholder="Search phone, name, dorm, order #"><select id="status-filter"><option value="">All orders</option><option>payment_started</option><option>received</option><option>in_progress</option><option>completed</option><option>cancelled</option></select><button id="refresh" class="copy-btn">Refresh</button><button id="sign-out" class="copy-btn">Sign out</button></div><div class="table-wrap"><table><thead><tr><th>Created</th><th>Customer</th><th>Order</th><th>Due</th><th>Payment</th><th>Order status</th><th>Tracking follow-up</th></tr></thead><tbody id="orders"></tbody></table></div><p id="message" class="muted"></p></section></main><script type="module" src="./dashboard.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DukeDrop · Orders</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&display=swap">
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    main{max-width:1100px}.dash-card{background:#fff;border-radius:20px;padding:24px;box-shadow:0 10px 30px -18px #1b272355}.dash-tools{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}.dash-tools input,.dash-tools select,.login input{padding:12px;border:1px solid #ddd;border-radius:10px;font:inherit}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:12px;border-bottom:1px solid #eee;white-space:nowrap}td select{padding:8px;border-radius:8px;border:1px solid #ddd}.muted{color:#667}.hidden{display:none}.login{max-width:420px}.stats{display:flex;gap:12px;flex-wrap:wrap}.stat{background:#f4f6f2;border-radius:12px;padding:12px 16px}.stat strong{display:block;font-size:22px}.error{color:#b42318}
+  </style>
+</head>
+<body>
+  <header>
+    <a class="brand" href="../index.html"><span aria-hidden="true">◆</span> DukeDrop</a>
+    <nav class="top-nav"><a href="../index.html">Order</a><a href="../faq.html">FAQ</a><a class="is-current" href="./">Dashboard</a></nav>
+  </header>
+  <main>
+    <section class="hero"><small>INTERNAL TOOLS</small><h1>Orders</h1><p>Order activity and tracking follow-ups.</p></section>
+    <section id="login" class="dash-card login">
+      <h2>Staff sign in</h2>
+      <p class="muted">Enter the dashboard password.</p>
+      <form id="sign-in-form">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" required>
+        <button id="sign-in" class="btn-pay" type="submit">Sign in</button>
+      </form>
+      <p id="login-message" class="error" role="status"></p>
+    </section>
+    <section id="dashboard" class="dash-card hidden">
+      <div class="stats" id="stats"></div>
+      <div class="dash-tools">
+        <input id="search" placeholder="Search phone, name, dorm, order #">
+        <select id="status-filter"><option value="">All orders</option><option>payment_started</option><option>received</option><option>in_progress</option><option>completed</option><option>cancelled</option></select>
+        <button id="refresh" class="copy-btn">Refresh</button>
+        <button id="sign-out" class="copy-btn">Sign out</button>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Created</th><th>Customer</th><th>Order</th><th>Due</th><th>Payment</th><th>Order status</th><th>Tracking follow-up</th></tr></thead><tbody id="orders"></tbody></table>
+      </div>
+      <p id="message" class="muted" role="status"></p>
+    </section>
+  </main>
+  <script type="module" src="./dashboard.js"></script>
+</body>
+</html>

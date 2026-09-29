@@ -1,6 +1,8 @@
 // Domain rules ported from the Claude Design project "App redesign requirements"
 // (DukeDrop.dc.html Component + DukeDrop-print.dc.html rate sheet). Pure and
 // framework-free so it can run both in the browser and under node:test.
+import { PROMO_CODES, isPromoEligible, promoDiscountPercent, promoMessage } from './promo-rules.js';
+export { PROMO_CODES, isPromoEligible, promoDiscountPercent, promoMessage };
 
 export const VENMO_USERNAME = 'dukedrop';
 export const ZELLE_DISPLAY = '(469) 964-9545';
@@ -13,7 +15,6 @@ export const INSTAGRAM_HANDLE = 'dukedrop_';
 // Zelle has no single network-wide memo limit (banks vary), so we use this
 // documented Venmo limit for both paths to guarantee copy/paste parity.
 export const PAYMENT_MEMO_MAX_LENGTH = 280;
-export const PROMO_CODES = { AUSTIN20: 20, FREEDROP: 100, COMPEDROP: 100 };
 export const SIZE_LIMIT_NOTE = "Size limit: nothing bigger than a mini microwave. Bigger than that — furniture, TVs, chairs, and the like — goes through Big Drop instead.";
 
 export const SERVICE_DETAILS = {
@@ -85,10 +86,6 @@ export function money(n) { return '$' + n.toFixed(2); }
 
 export function discountPercent(was, now) {
   return Math.round((1 - now / was) * 100);
-}
-
-export function promoDiscountPercent(code) {
-  return PROMO_CODES[String(code ?? '').trim().toUpperCase()] || 0;
 }
 
 export function calculateOrderTotal(service, quantity, promoCode = '') {
@@ -247,7 +244,8 @@ if (typeof document !== 'undefined') {
   function order(key) {
     const s = state[key];
     const service = s.size === 'bigdrop' ? 'bigdrop' : key;
-    return { service, baseService: key, orderSize: s.size, quantity: s.qty, dorm: s.dorm, room: s.room, phone: s.phone || '', carrier: s.carrier, tracking: s.tracking, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name, mode: s.mode, promoCode: state.promoCode, payMethod: s.payMethod };
+    const promoCode = isPromoEligible(state.promoCode, s) ? state.promoCode : '';
+    return { service, baseService: key, orderSize: s.size, quantity: s.qty, dorm: s.dorm, room: s.room, phone: s.phone || '', carrier: s.carrier, tracking: s.tracking, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name, mode: s.mode, promoCode, payMethod: s.payMethod };
   }
 
   function buildVM(key) {
@@ -257,8 +255,8 @@ if (typeof document !== 'undefined') {
     const o = order(key);
     const { tier, index: tierIndex } = tierFor(service, s.qty);
     const subtotal = tier.rate * s.qty;
-    const promoPercent = promoDiscountPercent(state.promoCode);
-    const total = calculateOrderTotal(service, s.qty, state.promoCode);
+    const promoPercent = promoDiscountPercent(o.promoCode);
+    const total = calculateOrderTotal(service, s.qty, o.promoCode);
     const v = validateOrder(o);
     const pickupStyle = key === 'pickup';
     const isLocker = pickupStyle && s.source === 'locker';
@@ -266,7 +264,7 @@ if (typeof document !== 'undefined') {
     const consentText = showConsent ? buildConsent(s.name, s.mailroom) : '';
     return {
       key, detail, tierIndex, total, subText: promoPercent ? `${s.qty} × ${money(tier.rate)} · ${promoPercent}% off (${money(subtotal)} → ${money(total)})` : `${s.qty} × ${money(tier.rate)}`,
-      promoPercent, promoEntered: state.promoCode.trim(),
+      promoPercent, promoEntered: state.promoCode.trim(), promoHint: promoMessage(state.promoCode, s),
       memo: buildMemo(o), ready: v.valid, missing: v.missing,
       isLocker, showConsent, consentText, pickupStyle,
       requests: (() => { try { return splitPaymentRequests(o); } catch { return []; } })(),
@@ -409,7 +407,7 @@ if (typeof document !== 'undefined') {
         ${consentHtml(key, vm)}
         <label>Promo code (optional)
           <input type="text" placeholder="Enter promo code" value="${esc(state.promoCode)}" data-field="promoCode" maxlength="64" autocapitalize="characters" autocorrect="off" spellcheck="false" aria-describedby="promo-code-hint">
-          ${vm.promoEntered ? `<span class="field-hint" id="promo-code-hint" data-role="promo-hint">${vm.promoPercent ? `${esc(state.promoCode.trim())} applied: ${vm.promoPercent}% off your order.` : 'That promo code isn’t recognized.'}</span>` : ''}
+          ${vm.promoEntered ? `<span class="field-hint" id="promo-code-hint" data-role="promo-hint">${esc(vm.promoHint)}</span>` : ''}
         </label>
         <div class="total-row">
           <div>
@@ -455,7 +453,7 @@ if (typeof document !== 'undefined') {
     const sub = card.querySelector('[data-role="subtext"]'); if (sub) sub.textContent = vm.subText;
     let promoHint = card.querySelector('[data-role="promo-hint"]');
     if (vm.promoEntered && !promoHint) { promoHint = document.createElement('span'); promoHint.className = 'field-hint'; promoHint.id = 'promo-code-hint'; promoHint.dataset.role = 'promo-hint'; card.querySelector('[data-field="promoCode"]').after(promoHint); }
-    if (promoHint) { promoHint.textContent = vm.promoEntered ? (vm.promoPercent ? `${state.promoCode.trim()} applied: ${vm.promoPercent}% off your order.` : 'That promo code isn’t recognized.') : ''; if (!vm.promoEntered) promoHint.remove(); }
+    if (promoHint) { promoHint.textContent = vm.promoEntered ? vm.promoHint : ''; if (!vm.promoEntered) promoHint.remove(); }
     const memo = card.querySelector('[data-role="memo"]'); if (memo) memo.textContent = vm.memo;
     const consentText = card.querySelector('[data-role="consent-text"]'); if (consentText) consentText.textContent = vm.consentText;
     const zelleLineEl = card.querySelector('[data-role="zelle-line"]'); if (zelleLineEl) zelleLineEl.textContent = vm.zelleLine;

@@ -1,16 +1,18 @@
+import { isPromoEligible, promoDiscountPercent } from '../promo-rules.js';
+
 const allowedServices = new Set(['express', 'pickup', 'returns', 'bigdrop']);
 const allowedBaseServices = new Set(['express', 'pickup', 'returns']);
-const promoCodes = { AUSTIN20: 20, FREEDROP: 100, COMPEDROP: 100 };
 const tiers = { express: [[2,4.99],[4,3.99],[50,2.99]], pickup: [[2,3.99],[4,2.99],[50,1.99]], returns: [[2,4.99],[4,3.99],[50,2.99]], bigdrop: [[50,12]] };
 
 function validOrder(o) {
   return o && allowedServices.has(o.service) && (!o.baseService || allowedBaseServices.has(o.baseService)) && Number.isInteger(o.quantity) && o.quantity >= 1 && o.quantity <= 50 &&
     String(o.dorm || '').trim() && String(o.room || '').trim() && /^\+?[\d ()-]{7,20}$/.test(String(o.phone || '').trim()) &&
-    (o.service === 'returns' || !String(o.tracking || '').trim() || String(o.carrier || '').trim());
+    (o.service === 'returns' || !String(o.tracking || '').trim() || String(o.carrier || '').trim()) &&
+    isPromoEligible(o.promoCode, o);
 }
 function totalFor(o) {
   const tier = tiers[o.service].find(([max]) => o.quantity <= max);
-  const percent = promoCodes[String(o.promoCode || '').trim().toUpperCase()] || 0;
+  const percent = promoDiscountPercent(o.promoCode);
   return Number((tier[1] * o.quantity * (100 - percent) / 100).toFixed(2));
 }
 
@@ -25,7 +27,7 @@ export default async function handler(req, res) {
     source: o.source || null, mailroom: o.mailroom || null, box_number: o.box || null,
     locker_location: o.lockerLocation || null, locker_code: o.locker || null, recipient_name: o.name || null,
     fulfillment_mode: o.mode || null, promo_code: String(o.promoCode || '').trim().toUpperCase() || null,
-    discount_percent: promoCodes[String(o.promoCode || '').trim().toUpperCase()] || 0,
+    discount_percent: promoDiscountPercent(o.promoCode),
     amount_due: totalFor(o), payment_method: ['venmo','zelle','card'].includes(o.payMethod) ? o.payMethod : null,
     payment_status: 'unconfirmed', order_status: 'payment_started',
   };

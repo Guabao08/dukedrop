@@ -1,18 +1,17 @@
 # DukeDrop
 
-Mobile-friendly order form with Express, Pickup, and Returns service options, each with a Normal size or Big Drop choice. Promo codes are `AUSTIN20` (20% off), `FREEDROP` (100% off), and `COMPEDROP` (100% off). Orders collect a phone number. Production order storage activates when its Vercel toggle and server credentials are present; the local static server leaves it off. A zero-dollar promo order still follows the existing payment handoff and is marked `payment_started`; payment is never claimed as confirmed automatically.
+Mobile-friendly order form with Express, Pickup, and Returns service options, each with a Normal size or Big Drop choice. Promo codes are `AUSTIN20` (20% off), `FREEDROP` (100% off for Craven House D, room 214), and `COMPEDROP` (100% off for Pegram, room 210). Orders collect a phone number. Production order storage activates when its Vercel toggle and server credentials are present; the local static server leaves it off. A zero-dollar promo order still follows the existing payment handoff and is marked `payment_started`; payment is never claimed as confirmed automatically.
 
 ## Supabase setup
 
-The connected Supabase project (`cyisyclzzjkupsludvqk`) has the SQL in `supabase/schema.sql` and `supabase/tracking-followup.sql` applied. The schema enables RLS, and dashboard access is restricted to Auth users whose admin-managed `app_metadata.role` is `staff`.
+The connected Supabase project (`cyisyclzzjkupsludvqk`) has the SQL in `supabase/schema.sql` and `supabase/tracking-followup.sql` applied. The schema enables RLS. The dashboard uses a shared password checked by server-side API routes; it does not require Supabase Auth accounts.
 
 To finish connecting production:
 
-1. In Supabase Auth, create each staff account and set its `app_metadata` to `{ "role": "staff" }`. Do not use user-editable `user_metadata` for this authorization claim.
-2. Set Vercel environment variables `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `ORDER_STORAGE_ENABLED=true`. The service role key is used only by the serverless order endpoint and must never be added to frontend variables. Order storage becomes active only when the toggle and both server credentials are present.
-3. Deploy. The internal dashboard is at `/dashboard/` and requires a Supabase staff sign-in.
+1. Set Vercel environment variables `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ORDER_STORAGE_ENABLED=true`, and `DASHBOARD_PASSWORD`. Store the service role key and dashboard password as sensitive server-side values. They must never be sent to frontend code. Order storage becomes active only when the toggle and server credentials are present.
+2. Deploy. The internal dashboard is at `/dashboard/`. A successful password check creates an eight-hour signed, HttpOnly session cookie; the API uses the service role key only after validating that session.
 
-For a new project or a reset, run `supabase/schema.sql` first and `supabase/tracking-followup.sql` second in the Supabase SQL Editor. The API validates fields and recomputes amounts from server-side pricing and promo rules. The dashboard receives only the public anon key; the service role key remains server-only.
+For a new project or a reset, run `supabase/schema.sql` first and `supabase/tracking-followup.sql` second in the Supabase SQL Editor. The public order API validates fields and recomputes amounts from server-side pricing and promo rules. The service role key remains server-only.
 
 ## Tracking follow-up funnel
 
