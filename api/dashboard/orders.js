@@ -19,7 +19,7 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
       const url = new URL(base);
-      url.searchParams.set('select', '*');
+      url.searchParams.set('select', '*,order_trackers(*)');
       const orders = [];
       url.searchParams.set('order', 'created_at.desc,id.desc');
       for (let offset = 0; ; offset += 500) {

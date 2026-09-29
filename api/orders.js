@@ -1,3 +1,4 @@
+import { syncTracking } from '../lib/carrier-tracking.js';
 import { isPromoEligible, promoDiscountPercent } from '../promo-rules.js';
 
 const allowedServices = new Set(['express', 'pickup', 'returns', 'bigdrop']);
@@ -37,6 +38,7 @@ export default async function handler(req, res) {
     });
     if (!response.ok) return res.status(502).json({ error: 'Could not save the order.' });
     const [saved] = await response.json();
+    try { await syncTracking({ orderId: saved.id }); } catch { /* Order saved; tracking retries independently. */ }
     return res.status(201).json({ id: saved.id });
   } catch { return res.status(502).json({ error: 'Could not save the order.' }); }
 }

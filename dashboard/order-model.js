@@ -14,7 +14,7 @@ export function inQueue(order, queue, now = Date.now()) {
 }
 export function filterOrders(orders, { queue = 'all', search = '', service = '', status = '', payment = '' } = {}, now = Date.now()) {
   const query = search.trim().toLowerCase();
-  return orders.filter(order => inQueue(order, queue, now) && (!service || order.service === service || (service !== 'bigdrop' && order.base_service === service)) && (!status || order.order_status === status) && (!payment || order.payment_status === payment) && (!query || [order.id, order.recipient_name, order.phone, order.dorm, order.room, order.tracking, order.carrier, order.promo_code].some(value => String(value ?? '').toLowerCase().includes(query))));
+  return orders.filter(order => inQueue(order, queue, now) && (!service || order.service === service || (service !== 'bigdrop' && order.base_service === service)) && (!status || order.order_status === status) && (!payment || order.payment_status === payment) && (!query || [order.id, order.recipient_name, order.phone, order.dorm, order.room, order.tracking, order.carrier, order.promo_code, ...(order.order_trackers || []).map(row => row.tracking_code)].some(value => String(value ?? '').toLowerCase().includes(query))));
 }
 export function summarizeOrders(orders, now = Date.now()) {
   return { active: orders.filter(isActive).length, unpaid: orders.filter(needsPayment).length, followup: orders.filter(order => needsFollowup(order, now)).length, completed: orders.filter(order => order.order_status === 'completed').length, collected: orders.filter(order => order.payment_status === 'paid').reduce((sum, order) => sum + Number(order.amount_due || 0), 0) };

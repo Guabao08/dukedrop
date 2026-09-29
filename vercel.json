@@ -1,5 +1,22 @@
 {
-  "functions": { "api/*.js": { "includeFiles": "supabase/**" } },
+  "functions": {
+    "api/*.js": {
+      "includeFiles": "supabase/**",
+      "maxDuration": 60
+    },
+    "api/tracking/*.js": {
+      "maxDuration": 60
+    },
+    "api/dashboard/tracking.js": {
+      "maxDuration": 60
+    }
+  },
   "buildCommand": "npm run build",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "crons": [
+    {
+      "path": "/api/tracking/reconcile",
+      "schedule": "0 10 * * *"
+    }
+  ]
 }
