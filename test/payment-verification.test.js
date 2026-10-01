@@ -35,11 +35,36 @@ test('an unpaid copy cannot block a paid match; exact duplicates count once', ()
   assert.equal(match([unpaid]).updates.length, 0);
 });
 
-test('conflicting room, amount, method, service or quantity never auto-confirm', () => {
-  for (const [index, value] of [[6, '211'], [2, '$4.98'], [13, 'Zelle'], [3, 'PICKUP'], [4, '2'], [2, '']]) {
+test('conflicting location or order details and missing amounts never auto-confirm', () => {
+  for (const [index, value] of [[6, '211'], [3, 'PICKUP'], [4, '2'], [2, '']]) {
     const conflict = [...row]; conflict[index] = value;
     assert.equal(match([conflict]).updates.length, 0, `column ${index}`);
   }
+});
+
+test('strong identity matches copy the paid ledger amount and payment method', () => {
+  const corrected = [...row]; corrected[2] = '$3.99'; corrected[13] = 'Zelle';
+  const result = match([corrected]);
+  assert.equal(result.updates.length, 1);
+  assert.equal(result.updates[0].updates.amount_due, 3.99);
+  assert.equal(result.updates[0].updates.payment_method, 'zelle');
+  assert.equal(match([corrected], [{ ...order, tracking: '' }]).updates.length, 0);
+  assert.equal(match([corrected], [{ ...order, tracking: '', recipient_name: 'Test Customer' }]).updates.length, 1);
+});
+
+test('a one-cent round-up matches, but arbitrary amount differences need identity', () => {
+  const rounded = [...row]; rounded[2] = '$5.00'; rounded[8] = '';
+  assert.equal(match([rounded], [{ ...order, tracking: '' }]).updates.length, 1);
+  rounded[2] = '$5.01';
+  assert.equal(match([rounded], [{ ...order, tracking: '' }]).updates.length, 0);
+  rounded[2] = '$4.98';
+  assert.equal(match([rounded], [{ ...order, tracking: '' }]).updates.length, 0);
+});
+
+test('a receipt already linked to an order cannot confirm another order', () => {
+  const owner = { ...order, id: 'existing-order', email_id: 'receipt-1', payment_status: 'paid' };
+  const result = match([row], [order, owner]);
+  assert.deepEqual(result.updates.map(update => update.id), ['existing-order']);
 });
 
 test('competing orders or distinct receipts stay ambiguous', () => {

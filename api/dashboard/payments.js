@@ -12,7 +12,7 @@ function headers() {
 async function loadOrders() {
   const base = `${process.env.SUPABASE_URL}/rest/v1/orders`;
   const url = new URL(base);
-  url.searchParams.set('select', 'id,service,base_service,quantity,dorm,room,carrier,tracking,amount_due,payment_method,payment_status,recipient_name');
+  url.searchParams.set('select', 'id,service,base_service,quantity,dorm,room,carrier,tracking,amount_due,payment_method,payment_status,recipient_name,email_id');
   url.searchParams.set('order', 'created_at.asc,id.asc');
   const orders = [];
   for (let offset = 0; ; offset += 500) {

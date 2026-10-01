@@ -19,7 +19,7 @@ The dashboard includes active-delivery, payment-review, tracking-follow-up, and 
 
 ### Payment verification and Venmo handoff
 
-Payment verification reads the public sheet and maps columns by header name. Only rows explicitly marked Paid participate; identical duplicate rows are ignored. Automatic matches require the same amount, payment method, service, quantity and dorm, plus the same room (or an exact tracking number when a room is missing). Competing matches stay unconfirmed. Matched sheet details update the dashboard without clearing fields for blank sheet cells, and refunded orders remain refunded. Amount differences need staff review.
+Payment verification reads the public sheet and maps columns by header name. Only rows explicitly marked Paid participate; identical duplicate rows are ignored. Automatic matches require the same service, quantity and dorm, plus the same room (or an exact tracking number when a room is missing). The amount and payment method must match unless an exact tracking number or customer/package name also identifies the order; a one-cent round-up is accepted. Strong unique matches copy the sheet's final amount, method and supplied details into the dashboard. Competing matches stay unconfirmed, blank cells do not erase saved details, refunded orders remain refunded, and receipt IDs already linked to another order cannot be reused.
 
 On mobile, Venmo checkout saves the order first, then presents a directly tapped app link. The recipient, exact total and note remain available to copy, with a profile link when app opening or prefilling is unavailable. Opening Venmo does not confirm payment.
 
