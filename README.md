@@ -17,6 +17,12 @@ For a new project or a reset, run `supabase/schema.sql` first and `supabase/trac
 
 The dashboard includes active-delivery, payment-review, tracking-follow-up, and completed-order queues. Search and service/status/payment filters combine within each queue. Open an order for contact, destination, locker, tracking, and payment details, then save status changes explicitly. Orders can be permanently deleted from their detail view after a second confirmation that requires typing the order reference; linked tracking entries are deleted with the order. Opening an SMS draft does not mark it sent; use “Mark as sent” after sending the message. Payment review excludes zero-dollar and closed orders.
 
+### Payment verification and Venmo handoff
+
+Payment verification reads the public sheet and maps columns by header name. Only rows explicitly marked Paid participate; identical duplicate rows are ignored. Automatic matches require the same amount, payment method, service, quantity and dorm, plus the same room (or an exact tracking number when a room is missing). Competing matches stay unconfirmed. Matched sheet details update the dashboard without clearing fields for blank sheet cells, and refunded orders remain refunded. Amount differences need staff review.
+
+On mobile, Venmo checkout saves the order first, then presents a directly tapped app link. The recipient, exact total and note remain available to copy, with a profile link when app opening or prefilling is unavailable. Opening Venmo does not confirm payment.
+
 ### Pickup readiness
 
 The Pickup readiness panel shows all services, including Big Drop with its base service, and sorts ready orders first. Filter by readiness/service or search order and shipment details. Carrier `delivered` counts as ready when delivered tracking entries cover every order item. Staff can add/remove tracking numbers and specify how many items each shipment covers. Partial arrivals stay waiting; carrier errors are held for attention. Single-item pickup-style locker orders can also be flagged from their supplied location and code. Returns require staff confirmation that items are packed. Completed/cancelled orders are closed.

@@ -177,6 +177,15 @@ test('Venmo payment details contain one total and use the stable profile handoff
   assert.equal(profileUrl.pathname, `/u/${VENMO_USERNAME}`);
   assert.equal(link.recipient, VENMO_USERNAME);
   assert.equal(link.note, splitPaymentRequests(o)[0].memo);
+  const appUrl = new URL(link.appUrl);
+  assert.equal(appUrl.protocol, 'venmo:');
+  assert.equal(appUrl.hostname, 'paycharge');
+  assert.equal(appUrl.searchParams.get('txn'), 'pay');
+  assert.deepEqual(appUrl.searchParams.getAll('recipients'), [VENMO_USERNAME]);
+  assert.equal(appUrl.searchParams.get('amount'), link.amount);
+  assert.equal(appUrl.searchParams.get('note'), link.note);
+  assert.ok(link.appUrl.includes('%20'));
+  assert.ok(!link.appUrl.includes('+'), 'native app queries must encode spaces as %20');
 });
 
 test('Venmo link throws with the missing fields when the order is incomplete', () => {

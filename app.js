@@ -244,6 +244,7 @@ export function venmoLink(o) {
     note,
     recipient: VENMO_USERNAME,
     paymentUrl: paymentUrl.toString(),
+    appUrl: `venmo://paycharge?${paymentUrl.searchParams.toString().replace(/\+/g, '%20')}`,
     profileUrl: VENMO_PROFILE_URL,
   };
 }
@@ -401,7 +402,13 @@ if (typeof document !== 'undefined') {
     if (method === 'venmo') {
       const label = s.paymentBusy ? 'Saving order…' : vm.ready ? (vm.total === 0 ? 'Submit free order' : 'Save order & continue to Venmo') : 'Enter details to pay';
       if (state.venmoFallback[key] && vm.total === 0) return `<div class="fallback"><strong>Order saved · no payment due</strong><p>This order has a $0.00 balance.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
-      if (state.venmoFallback[key]) return `<div class="fallback"><strong>Order saved · one payment only</strong><p>Continue to Venmo to pay <a href="${VENMO_PROFILE_URL}">@${VENMO_USERNAME}</a> the total <strong>${money(vm.total)}</strong>. The order note is included.</p><a class="btn-pay venmo-profile-link" href="${esc(venmoLink(order(key)).paymentUrl)}">Open prefilled Venmo payment <span aria-hidden="true">↗</span></a><div class="fallback-mono" data-role="venmo-note">${esc(vm.venmoNote)}</div><button type="button" class="copy-btn" data-action="copy" data-value-role="venmo-note">Copy payment note</button><p>Do not split this order into separate payments. Payment is not confirmed until DukeDrop verifies it.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
+      if (state.venmoFallback[key]) {
+        const payment = venmoLink(order(key));
+        const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        // A fresh tap on a real link preserves the user gesture needed to open
+        // a mobile app. Never launch after awaiting saveOrder or a clipboard write.
+        return `<div class="fallback"><strong>Order saved · ready to pay</strong><p>Pay <strong>@${VENMO_USERNAME}</strong> exactly <strong>${money(Number(payment.amount))}</strong>. Copy the note below before opening Venmo.</p><div class="fallback-mono" data-role="venmo-note">${esc(payment.note)}</div><button type="button" class="copy-btn" data-action="copy" data-value-role="venmo-note">Copy payment note</button><button type="button" class="copy-btn" data-action="copy" data-value="${esc(payment.recipient)}">Copy recipient</button><button type="button" class="copy-btn" data-action="copy" data-value="${esc(payment.amount)}">Copy amount</button><a class="btn-pay venmo-profile-link" href="${esc(mobile ? payment.appUrl : payment.paymentUrl)}">${mobile ? 'Open Venmo app' : 'Continue to Venmo'} <span aria-hidden="true">↗</span></a><p>If the payment details are not filled in, paste the recipient, amount, and note above. Check all three before paying.</p><p><a href="${payment.profileUrl}">Open @${VENMO_USERNAME}’s Venmo profile</a> if the app link does not open. In an Instagram or other in-app browser, open this page in Safari or Chrome first.</p><p>Send one payment for this order. Payment is confirmed after DukeDrop matches it to the payment sheet.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
+      }
       return `<button type="button" class="btn-pay" data-action="pay-venmo" ${vm.ready && !s.paymentBusy ? '' : 'disabled'}>${label}</button>`;
     }
     if (method === 'zelle') {
@@ -545,8 +552,8 @@ if (typeof document !== 'undefined') {
       const ta = document.createElement('textarea');
       ta.value = value; ta.style.position = 'fixed'; ta.style.opacity = '0';
       document.body.appendChild(ta); ta.focus(); ta.select();
-      document.execCommand('copy'); document.body.removeChild(ta);
-      done();
+      const copied = document.execCommand('copy'); document.body.removeChild(ta);
+      if (copied) done();
     } catch { /* clipboard unavailable; button simply won't flip to Copied */ }
   }
 
