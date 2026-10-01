@@ -259,6 +259,7 @@ if (typeof document !== 'undefined') {
 
   const makeServiceState = (service) => ({
     qty: 1, dorm: '', room: '', carrier: '', tracking: '', payMethod: 'venmo', paymentBusy: false,
+    stripeClientSecret: '', stripeError: '', stripeFreeOrder: false,
     ...(service === 'pickup' || service === 'bigdrop' ? { source: 'mailbox', mailroom: '', box: '', lockerLocation: '', locker: '', name: '' } : {}),
     size: 'standard',
     ...(service === 'bigdrop' ? { mode: 'ship' } : {}),
@@ -276,6 +277,7 @@ if (typeof document !== 'undefined') {
   };
 
   const app = document.getElementById('app');
+  let stripeReady = false;
 
   function order(key) {
     const s = state[key];
@@ -416,7 +418,10 @@ if (typeof document !== 'undefined') {
       return `${requestSummary || `<button type="button" class="btn-pay" data-action="pay-zelle" ${vm.ready ? '' : 'disabled'}>${label}</button>`}
         ${state.zelleFallback[key] ? `<div class="fallback fallback-copied"><strong class="copied-flag">Note copied to clipboard</strong>Open your bank's app and send to <strong>${esc(ZELLE_DISPLAY)}</strong> — paste the note below if your bank allows one:<div class="fallback-mono" data-role="zelle-line">${esc(vm.zelleLine)}</div></div>` : ''}`;
     }
-    return `<div class="card-note">Card payments are launching soon — please use Venmo or Zelle for now.</div>`;
+    if (s.stripeFreeOrder) return `<div class="fallback"><strong>Order saved · no payment due</strong><p>This order has a $0.00 balance.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
+    if (!stripeReady) return `<div class="card-note">Card payments are being set up. Please use Venmo or Zelle for now.</div>`;
+    if (s.stripeClientSecret) return `<div id="checkout-form" aria-label="Secure card payment form"></div><p class="field-hint">Your card details are handled securely by Stripe.</p><p class="field-hint" data-role="stripe-confirmation" role="status"></p>`;
+    return `${s.stripeError ? `<p class="missing" role="alert">${esc(s.stripeError)}</p>` : ''}<button type="button" class="btn-pay" data-action="pay-card" ${vm.ready && !s.paymentBusy ? '' : 'disabled'}>${s.paymentBusy ? 'Preparing secure checkout…' : vm.ready ? `Pay ${money(vm.total)} with card` : 'Enter details to pay by card'}</button>`;
   }
 
   function cardHtml(key) {
@@ -482,6 +487,13 @@ if (typeof document !== 'undefined') {
     app.innerHTML = `${tabsHtml()}${cardHtml(key)}`;
     if (state[key].saved || state[key].paymentBusy) app.querySelectorAll('[data-field], [data-action="size"], [data-action="source"], [data-action="mode"], [data-action="qty-dec"], [data-action="qty-inc"], [data-action="paymethod"]').forEach(control => { control.disabled = true; });
   }
+
+  fetch('/api/config', { cache: 'no-store' }).then(response => response.ok ? response.json() : null).then(config => {
+    stripeReady = Boolean(config?.stripeReady && config?.stripePublishableKey);
+    const active = state.active;
+    const panel = app.querySelector('[data-role="payment-panel"]');
+    if (panel && state[active].payMethod === 'card') panel.innerHTML = paymentPanelHtml(active, buildVM(active));
+  }).catch(() => {});
 
   // Cheap refresh of computed text/attributes without touching input elements,
   // so typing in a field never resets its cursor position.
@@ -557,6 +569,36 @@ if (typeof document !== 'undefined') {
     } catch { /* clipboard unavailable; button simply won't flip to Copied */ }
   }
 
+  async function mountStripeCheckout(clientSecret) {
+    const configResponse = await fetch('/api/config', { cache: 'no-store' });
+    if (!configResponse.ok) throw new Error('Stripe configuration could not be loaded.');
+    const config = await configResponse.json();
+    if (!config.stripePublishableKey || typeof window.Stripe !== 'function') throw new Error('Stripe is not configured on this site yet.');
+    const stripe = window.Stripe(config.stripePublishableKey, { betas: ['custom_checkout_payment_form_1'] });
+    const appearance = {
+      theme: 'stripe', labels: 'auto', inputs: 'spaced',
+      variables: {
+        borderRadius: '4px', colorBackground: '#ffffff', colorDanger: '#df1b41',
+        colorPrimary: '#0570de', colorSuccess: '#00c853', colorText: '#30313d',
+        fontFamily: 'default', fontSizeBase: '16px', spacingUnit: '4px',
+      },
+    };
+    const checkout = await stripe.initCheckoutFormSdk({ clientSecret, appearance });
+    const form = checkout.createForm({ layout: 'expanded' });
+    form.mount('#checkout-form');
+    const loadActionsResult = await checkout.loadActions();
+    if (loadActionsResult.type !== 'success') throw new Error('Stripe could not load the secure payment form. Refresh and try again.');
+    form.on('confirm', async event => {
+      const status = app.querySelector('[data-role="stripe-confirmation"]');
+      try {
+        await loadActionsResult.actions.confirm({ formConfirmEvent: event });
+        if (status) status.textContent = 'Payment submitted securely. Save your Stripe receipt; staff will confirm the order in the dashboard.';
+      } catch (error) {
+        if (status) status.textContent = error?.message || 'Payment could not be confirmed. Please try again.';
+      }
+    });
+  }
+
   app.addEventListener('click', async (e) => {
     const el = e.target.closest('[data-action]');
     if (!el) return;
@@ -606,6 +648,38 @@ if (typeof document !== 'undefined') {
       state.venmoFallback[key] = true;
       state[key].paymentBusy = false;
       render();
+      return;
+    }
+    if (action === 'pay-card') {
+      const vm = buildVM(key);
+      if (!vm.ready || state[key].paymentBusy || state[key].saved) return;
+      const paymentOrder = { ...order(key), payMethod: 'card' };
+      state[key].paymentBusy = true; state[key].stripeError = ''; render();
+      let checkoutRendered = false;
+      if (vm.total === 0) {
+        if (await saveOrder(key, paymentOrder)) state[key].stripeFreeOrder = true;
+        else state[key].stripeError = 'We could not save your order. Please contact DukeDrop before continuing.';
+        state[key].paymentBusy = false; render(); return;
+      }
+      try {
+        const response = await fetch('/api/create-checkout-session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order: paymentOrder }) });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || 'Could not start Stripe checkout.');
+        if (!body.client_secret) throw new Error('Stripe did not return a Checkout client secret.');
+        if (!await saveOrder(key, paymentOrder)) throw new Error('We could not save your order. Please contact DukeDrop before paying.');
+        state[key].stripeClientSecret = body.client_secret;
+        render();
+        checkoutRendered = true;
+        await mountStripeCheckout(body.client_secret);
+      } catch (error) {
+        if (checkoutRendered) {
+          const status = app.querySelector('[data-role="stripe-confirmation"]');
+          if (status) status.textContent = error.message || 'Could not load the secure payment form. Please refresh the page.';
+        } else state[key].stripeError = error.message || 'Could not start Stripe checkout.';
+      } finally {
+        state[key].paymentBusy = false;
+        if (!checkoutRendered) render();
+      }
       return;
     }
     if (action === 'pay-zelle') {

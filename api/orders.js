@@ -7,13 +7,13 @@ const allowedServices = new Set(['express', 'pickup', 'returns', 'bigdrop']);
 const allowedBaseServices = new Set(['express', 'pickup', 'returns']);
 const tiers = { express: [[2,4.99],[4,3.99],[50,2.99]], pickup: [[2,3.99],[4,2.99],[50,1.99]], returns: [[2,4.99],[4,3.99],[50,2.99]], bigdrop: [[50,12]] };
 
-function validOrder(o) {
+export function isValidOrder(o) {
   return o && allowedServices.has(o.service) && (!o.baseService || allowedBaseServices.has(o.baseService)) && Number.isInteger(o.quantity) && o.quantity >= 1 && o.quantity <= 50 &&
     String(o.dorm || '').trim() && String(o.room || '').trim() && /^\+?[\d ()-]{7,20}$/.test(String(o.phone || '').trim()) &&
     (o.service === 'returns' || !String(o.tracking || '').trim() || String(o.carrier || '').trim()) &&
     isPromoEligible(o.promoCode, o);
 }
-function totalFor(o) {
+export function totalFor(o) {
   const tier = tiers[o.service].find(([max]) => o.quantity <= max);
   const percent = promoDiscountPercent(o.promoCode);
   return Number((tier[1] * o.quantity * (100 - percent) / 100).toFixed(2));
@@ -23,7 +23,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   if (process.env.ORDER_STORAGE_ENABLED !== 'true' || !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return res.status(503).json({ error: 'Order storage is not configured' });
   const o = req.body || {};
-  if (!validOrder(o)) return res.status(400).json({ error: 'Please complete the required order details.' });
+  if (!isValidOrder(o)) return res.status(400).json({ error: 'Please complete the required order details.' });
   const row = {
     service: o.service, base_service: o.baseService || o.service, order_size: o.orderSize || (o.service === 'bigdrop' ? 'bigdrop' : 'standard'), quantity: o.quantity, dorm: String(o.dorm).trim(), room: String(o.room).trim(),
     phone: String(o.phone).trim(), carrier: o.carrier || null, tracking: o.baseService === 'returns' || o.service === 'returns' ? null : String(o.tracking).trim(),
