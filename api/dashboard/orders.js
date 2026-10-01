@@ -11,7 +11,7 @@ function headers() {
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
-  if (!['GET', 'PATCH'].includes(req.method)) return res.status(405).json({ error: 'Method not allowed' });
+  if (!['GET', 'PATCH', 'DELETE'].includes(req.method)) return res.status(405).json({ error: 'Method not allowed' });
   if (!dashboardConfigured()) return res.status(503).json({ error: 'Dashboard access is not configured.' });
   if (!hasDashboardSession(req, process.env.DASHBOARD_PASSWORD)) return res.status(401).json({ error: 'Sign in required.' });
 
@@ -32,6 +32,21 @@ export default async function handler(req, res) {
         if (page.length < 500) break;
       }
       return res.status(200).json(orders);
+    }
+
+    if (req.method === 'DELETE') {
+      const { id, confirmation } = req.body || {};
+      if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) ||
+        confirmation !== `DELETE #${id.slice(0, 8).toUpperCase()}`) {
+        return res.status(400).json({ error: 'Order confirmation did not match.' });
+      }
+      const url = new URL(base);
+      url.searchParams.set('id', `eq.${id}`);
+      const response = await fetch(url, { method: 'DELETE', headers: { ...headers(), Prefer: 'return=representation' } });
+      if (!response.ok) return res.status(502).json({ error: 'Could not delete the order.' });
+      const deleted = await response.json();
+      if (!Array.isArray(deleted) || deleted.length !== 1) return res.status(404).json({ error: 'Order not found.' });
+      return res.status(200).json({ ok: true });
     }
 
     const { id, updates } = req.body || {};

@@ -15,13 +15,17 @@ For a new project or a reset, run `supabase/schema.sql` first and `supabase/trac
 
 ## Operations dashboard
 
-The dashboard includes active-delivery, payment-review, tracking-follow-up, and completed-order queues. Search and service/status/payment filters combine within each queue. Open an order for contact, destination, locker, tracking, and payment details, then save status changes explicitly. Opening an SMS draft does not mark it sent; use “Mark as sent” after sending the message. Payment review excludes zero-dollar and closed orders.
+The dashboard includes active-delivery, payment-review, tracking-follow-up, and completed-order queues. Search and service/status/payment filters combine within each queue. Open an order for contact, destination, locker, tracking, and payment details, then save status changes explicitly. Orders can be permanently deleted from their detail view after a second confirmation that requires typing the order reference; linked tracking entries are deleted with the order. Opening an SMS draft does not mark it sent; use “Mark as sent” after sending the message. Payment review excludes zero-dollar and closed orders.
 
 ### Pickup readiness
 
 The Pickup readiness panel shows all services, including Big Drop with its base service, and sorts ready orders first. Filter by readiness/service or search order and shipment details. Carrier `delivered` counts as ready when delivered tracking entries cover every order item. Staff can add/remove tracking numbers and specify how many items each shipment covers. Partial arrivals stay waiting; carrier errors are held for attention. Single-item pickup-style locker orders can also be flagged from their supplied location and code. Returns require staff confirmation that items are packed. Completed/cancelled orders are closed.
 
 Staff readiness overrides and collection notes remain available; payment remains independent. Orders refresh every minute while the dashboard is visible and no detail dialog is open. The API pages through stored orders. EasyPost tracker registration, authenticated webhooks, and daily reconciliation are implemented; **live tracking requires a production EasyPost API key**. See [carrier tracking setup](docs/carrier-tracking.md) for activation, coverage rules, and retry behavior.
+
+### Payment verification from Google Sheets
+
+The dashboard's **Verify payments** action reads the public CSV view of the configured Google Sheet; no service account or added credentials are needed. Defaults point to the `Orders` tab in the linked sheet. To use a different sheet, set `PAYMENT_SHEET_ID` and `PAYMENT_SHEET_GID` in Vercel. It expects headers `Amount`, `Service`, `Package Count`, `Dorm`, `Room`, `Payment Method`, and `Status`. An order is marked paid only when exactly one sheet row matches amount, Venmo/Zelle method, service, package count, dorm, and room; that row must have `Status` set to `Paid`. Carrier and tracking details narrow a match when present in both records. Duplicate, incomplete, unmatched, and not-paid rows stay in payment review. The sheet is never modified.
 
 ## Tracking follow-up funnel
 

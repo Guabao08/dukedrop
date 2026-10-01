@@ -5,13 +5,13 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&a
 const money = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value || 0));
 const date = (value, full = false) => value && !Number.isNaN(new Date(value).getTime()) ? new Date(value).toLocaleString('en-US', full ? { dateStyle: 'medium', timeStyle: 'short' } : { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Not provided';
 const queues = { tracking: ['Pickup readiness', 'Track all orders through collection.'], all: ['All orders', 'Your orders, newest first.'], active: ['Active deliveries', 'Orders still moving through your team’s workflow.'], unpaid: ['Payment review', 'Active orders with a balance awaiting payment confirmation.'], followup: ['Tracking follow-ups', 'Active orders whose tracking follow-up is due now.'], completed: ['Completed deliveries', 'The drops your team has finished.'] };
-let trackingConfigured = false, syncingCarriers = false;
-let allOrders = [], queue = 'all', selectedId = null, loading = false, saving = false, toastTimer, lastSync = null, detailOpener = null;
+let trackingConfigured = false, syncingCarriers = false, paymentSheetConfigured = false, verifyingPayments = false;
+let allOrders = [], queue = 'all', selectedId = null, loading = false, saving = false, deleteConfirming = false, toastTimer, lastSync = null, detailOpener = null;
 $('#today').textContent = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric' });
 function notice(message = '') { $('#message').textContent = message; $('#message').hidden = !message; }
 function toast(message) { clearTimeout(toastTimer); $('#toast').textContent = message; $('#toast').hidden = false; toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 4500); }
 function showLogin(message = '') {
-  allOrders = []; selectedId = null; lastSync = null;
+  allOrders = []; selectedId = null; lastSync = null; paymentSheetConfigured = false; deleteConfirming = false;
   $('#order-dialog').close(); $('#order-details').replaceChildren(); $('#orders').replaceChildren(); $('#stats').replaceChildren(); $('#pickup-orders').replaceChildren(); $('#pickup-summary').replaceChildren(); trackingConfigured = false;
   $('#dashboard').hidden = true; $('#login').hidden = false; $('#login-message').textContent = message; $('#toast').hidden = true;
 }
@@ -28,6 +28,13 @@ async function load() {
     if (!Array.isArray(orders)) throw new Error('Could not read the order list.');
     allOrders = orders;
     try { const configResponse = await fetch('/api/dashboard/tracking', { cache: 'no-store' }); if (configResponse.ok) { trackingConfigured = Boolean((await configResponse.json()).configured); } } catch { trackingConfigured = false; }
+    paymentSheetConfigured = false;
+    try {
+      const paymentResponse = await fetch('/api/dashboard/payments', { cache: 'no-store' });
+      if (paymentResponse.ok) paymentSheetConfigured = Boolean((await paymentResponse.json()).configured);
+    } catch { paymentSheetConfigured = false; }
+    $('#payment-sheet-state').textContent = paymentSheetConfigured ? 'Sheet connected' : 'Sheet access needs setup';
+    $('#verify-payments').disabled = !paymentSheetConfigured || verifyingPayments;
     $('#tracking-connection').textContent = trackingConfigured ? 'Carrier integration configured' : 'Carrier connection needed';
     $('#sync-carriers').disabled = !trackingConfigured || syncingCarriers;
     if (!trackingConfigured) $('#tracking-message').textContent = 'Live updates need an EasyPost connection. Tracking details can be saved now.';
@@ -75,6 +82,10 @@ function renderDetails() {
   const phone = String(order.phone || '').replace(/[^+\d]/g, '');
   const sms = `sms:${phone}?body=${encodeURIComponent(`Hi${order.recipient_name ? ` ${order.recipient_name}` : ''}, this is DukeDrop following up on your order. Could you send us the tracking number when available?`)}`;
   $('#order-details').innerHTML = `<section class="detail-section"><div class="detail-grid">${field('Customer', order.recipient_name)}${field('Phone', order.phone)}${field('Dorm', order.dorm)}${field('Room', order.room)}${field('Placed', date(order.created_at, true))}${field('Service', `${SERVICE_LABELS[order.service] || order.service} · ${order.quantity} ${Number(order.quantity) === 1 ? 'item' : 'items'}`)}${order.service === 'bigdrop' ? field('Base service', SERVICE_LABELS[order.base_service]) : ''}</div>${phone ? `<div class="detail-actions"><a class="button" href="tel:${esc(phone)}">Call customer ↗</a><a class="button" href="${esc(sms)}">Open text message ↗</a></div>` : ''}</section><section class="detail-section"><h3>Fulfillment details</h3><div class="detail-grid">${field('Carrier', order.carrier)}${field('Tracking', order.tracking, true)}${order.source ? field('Pickup source', order.source === 'locker' ? 'Locker' : 'Mailroom') : ''}${order.fulfillment_mode ? field('Fulfillment', order.fulfillment_mode === 'ship' ? 'Ship to DukeDrop' : 'Pickup') : ''}${order.mailroom ? field('Mailroom', order.mailroom) : ''}${order.box_number ? field('Box number', order.box_number) : ''}${order.locker_location ? field('Locker location', order.locker_location) : ''}${order.locker_code ? field('Locker code', order.locker_code) : ''}</div></section>${trackingDetails(order)}<section class="detail-section"><h3>Pickup readiness</h3><p>${esc(pickupReadiness(order).label)} · ${esc(pickupReadiness(order).source)}</p><p class="detail-note">${esc(pickupReadiness(order).reason)}</p><div class="detail-grid">${field('Collection location', pickupLocation(order))}${field('Last staff update', order.pickup_updated_at ? date(order.pickup_updated_at, true) : 'No staff update')}</div><form id="readiness-form"><label>Readiness for all ${esc(order.quantity)} ${Number(order.quantity) === 1 ? 'item' : 'items'}<select name="pickup_readiness">${options(READINESS_LABELS, order.pickup_readiness || 'auto')}</select></label><label>Collection note<textarea name="pickup_note" maxlength="1000" rows="3" placeholder="Confirmation source, collection instructions, or reason for a hold">${esc(order.pickup_note || '')}</textarea></label><p class="detail-note">Choose Ready to collect only after all items are available. Collected removes the order from the ready list; it does not complete the delivery.</p><button class="button primary" type="submit">Save readiness</button></form></section><section class="detail-section"><h3>Payment & progress</h3><div class="detail-grid">${field('Amount due', money(order.amount_due))}${field('Payment method', order.payment_method)}${order.promo_code ? field('Promotion', `${order.promo_code} · ${order.discount_percent}% off`) : ''}</div><form id="update-form"><div class="edit-grid" style="margin-top:20px"><label>Order status<select name="order_status">${options(ORDER_LABELS, order.order_status)}</select></label><label>Payment status<select name="payment_status">${options(PAYMENT_LABELS, order.payment_status)}</select></label></div><p class="detail-note">Confirm payment in the payment app before marking an order paid.</p><button class="button primary" type="submit">Save changes</button></form></section><section class="detail-section"><h3>Tracking follow-up</h3><div class="detail-grid">${field('Follow-up status', FOLLOWUP_LABELS[order.tracking_followup_status] || order.tracking_followup_status)}${field('Due', order.tracking_followup_due_at ? date(order.tracking_followup_due_at, true) : 'No follow-up scheduled')}${order.tracking_followup_sent_at ? field('Last marked sent', date(order.tracking_followup_sent_at, true)) : ''}</div>${['pending','sent'].includes(order.tracking_followup_status) ? `<p class="detail-note">Open a text message above, send it, then mark the follow-up as sent here.</p><div class="detail-actions">${order.tracking_followup_status === 'pending' ? '<button class="button" data-followup="sent">Mark as sent</button>' : ''}<button class="button" data-followup="skipped">Skip follow-up</button></div>` : ''}</section>`;
+  const reference = order.id.slice(0, 8).toUpperCase();
+  $('#order-details').insertAdjacentHTML('beforeend', deleteConfirming
+    ? `<section class="detail-section danger-zone"><h3>Confirm deletion</h3><p>This permanently deletes ${esc(order.recipient_name || 'this order')} #${reference} and its tracking entries.</p><form id="delete-order-form"><label>Type <strong>DELETE #${reference}</strong> to confirm<input name="confirmation" autocomplete="off" autocapitalize="characters" spellcheck="false" required aria-label="Type DELETE and the order reference to confirm"></label><div class="detail-actions"><button type="button" class="button" data-cancel-delete>Cancel</button><button type="submit" class="button danger">Permanently delete order</button></div></form></section>`
+    : '<section class="detail-section danger-zone"><h3>Remove entry</h3><p>Delete this order and its linked tracking entries.</p><button type="button" class="button danger" data-delete-order>Delete order…</button></section>');
 }
 async function updateOrder(updates) {
   if (saving || !selectedId) return;
@@ -90,6 +101,33 @@ async function updateOrder(updates) {
     render(); if (selectedId === id) renderDetails(); toast('Order updated.');
   } catch (error) { toast(error.message); }
   finally { saving = false; $('#order-details').querySelectorAll('button, select, textarea, input').forEach(element => { element.disabled = false; }); }
+}
+async function deleteOrder(confirmation) {
+  if (saving || !selectedId) return;
+  const id = selectedId;
+  const expected = `DELETE #${id.slice(0, 8).toUpperCase()}`;
+  if (confirmation !== expected) { toast(`Type ${expected} exactly to confirm deletion.`); return; }
+  saving = true;
+  $('#order-details').querySelectorAll('button, select, textarea, input').forEach(element => { element.disabled = true; });
+  try {
+    const response = await fetch('/api/dashboard/orders', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, confirmation }),
+    });
+    if (response.status === 401) { showLogin('Your session expired. Please sign in again.'); return; }
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not delete the order.');
+    allOrders = allOrders.filter(order => order.id !== id);
+    selectedId = null; deleteConfirming = false;
+    $('#order-dialog').close();
+    render();
+    toast('Order and linked tracking entries deleted.');
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    saving = false;
+    if ($('#order-dialog').open) $('#order-details').querySelectorAll('button, select, textarea, input').forEach(element => { element.disabled = false; });
+  }
 }
 $('#sign-in-form').addEventListener('submit', async event => {
   event.preventDefault(); $('#sign-in').disabled = true; $('#login-message').textContent = 'Signing in…';
@@ -107,6 +145,7 @@ $('#sign-out').onclick = async () => {
   finally { $('#sign-out').disabled = false; }
 };
 $('#refresh').onclick = load;
+$('#verify-payments').onclick = verifyPayments;
 $('#pickup-search').oninput = renderPickup;
 $('#pickup-filter').onchange = renderPickup;
 $('#pickup-service').onchange = renderPickup;
@@ -116,13 +155,51 @@ $('#queue-nav').onclick = event => { const button = event.target.closest('[data-
 $('#search').oninput = render;
 for (const id of ['service-filter', 'status-filter', 'payment-filter', 'sort-orders']) $(`#${id}`).onchange = render;
 $('#reset-filters').onclick = () => { for (const id of ['search', 'service-filter', 'status-filter', 'payment-filter']) $(`#${id}`).value = ''; $('#sort-orders').value = 'newest'; render(); };
-function openOrder(event) { const button = event.target.closest('[data-open]'); if (!button) return; detailOpener = button; selectedId = button.dataset.open; renderDetails(); $('#order-dialog').showModal(); }
+function openOrder(event) { const button = event.target.closest('[data-open]'); if (!button) return; detailOpener = button; selectedId = button.dataset.open; deleteConfirming = false; renderDetails(); $('#order-dialog').showModal(); }
 $('#orders').onclick = openOrder; $('#pickup-orders').onclick = openOrder;
 $('#close-details').onclick = () => $('#order-dialog').close();
-$('#order-dialog').addEventListener('close', () => { selectedId = null; detailOpener?.isConnected && detailOpener.focus(); });
+$('#order-dialog').addEventListener('close', () => { selectedId = null; deleteConfirming = false; detailOpener?.isConnected && detailOpener.focus(); });
 $('#order-details').addEventListener('submit', event => { if (event.target.id === 'tracking-form') { event.preventDefault(); const values = new FormData(event.target); changeTracking('POST', { order_id: selectedId, tracking_code: values.get('tracking_code'), carrier: values.get('carrier'), items_count: Number(values.get('items_count')) }); return; } if (event.target.id === 'readiness-form') { event.preventDefault(); const values = new FormData(event.target); updateOrder({ pickup_readiness: values.get('pickup_readiness'), pickup_note: values.get('pickup_note').trim() }); return; } if (event.target.id !== 'update-form') return; event.preventDefault(); const values = new FormData(event.target); updateOrder({ order_status: values.get('order_status'), payment_status: values.get('payment_status') }); });
+$('#order-details').addEventListener('submit', event => {
+  if (event.target.id !== 'delete-order-form') return;
+  event.preventDefault();
+  deleteOrder(new FormData(event.target).get('confirmation'));
+});
+$('#order-details').addEventListener('click', event => {
+  if (event.target.closest('[data-delete-order]')) { deleteConfirming = true; renderDetails(); return; }
+  if (event.target.closest('[data-cancel-delete]')) { deleteConfirming = false; renderDetails(); }
+});
 $('#order-details').onclick = event => { const remove = event.target.closest('[data-remove-tracking]'); if (remove) { changeTracking('DELETE', { id: remove.dataset.removeTracking }); return; } const button = event.target.closest('[data-followup]'); if (!button) return; const updates = { tracking_followup_status: button.dataset.followup }; if (updates.tracking_followup_status === 'sent') updates.tracking_followup_sent_at = new Date().toISOString(); updateOrder(updates); };
 load().then(() => { if (!$('#dashboard').hidden) syncCarriers(true); });
+
+async function verifyPayments() {
+  if (verifyingPayments || !paymentSheetConfigured) return;
+  verifyingPayments = true;
+  $('#verify-payments').disabled = true;
+  $('#payment-sheet-state').textContent = 'Checking sheet for unique paid matches…';
+  try {
+    const response = await fetch('/api/dashboard/payments', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'verify' }),
+    });
+    if (response.status === 401) { showLogin('Your session expired. Please sign in again.'); return; }
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not verify payments.');
+    const confirmed = new Set(result.confirmedIds || []);
+    allOrders.forEach(order => { if (confirmed.has(order.id)) order.payment_status = 'paid'; });
+    render();
+    $('#payment-sheet-state').textContent = `${result.confirmed} confirmed · ${result.ambiguous} ambiguous · ${result.unmatched} unmatched`;
+    toast(result.confirmed
+      ? `${result.confirmed} payment${result.confirmed === 1 ? '' : 's'} confirmed from the sheet.`
+      : `No unique paid matches. ${result.ambiguous} ambiguous, ${result.unpaidRows} not marked paid, ${result.unmatched} unmatched.`);
+    if (selectedId) renderDetails();
+  } catch (error) {
+    $('#payment-sheet-state').textContent = error.message;
+    toast(error.message);
+  } finally {
+    verifyingPayments = false;
+    $('#verify-payments').disabled = !paymentSheetConfigured;
+  }
+}
 
 function renderPickup() {
   $('#pickup-sync').textContent = lastSync ? `Orders updated ${lastSync.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'Loading orders';

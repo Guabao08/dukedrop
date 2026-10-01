@@ -9,6 +9,9 @@
     },
     "api/dashboard/tracking.js": {
       "maxDuration": 60
+    },
+    "api/dashboard/payments.js": {
+      "maxDuration": 60
     }
   },
   "buildCommand": "npm run build",

@@ -399,9 +399,9 @@ if (typeof document !== 'undefined') {
     const requests = vm.requests;
     const requestSummary = method === 'zelle' && requests.length > 1 ? `<div class="payment-requests"><strong>Payment requests</strong>${requests.map((r) => `<div class="payment-request"><div>Payment ${r.index} of ${r.total}: <strong>${money(r.amountCents / 100)}</strong></div><div class="fallback-mono">${esc(r.identifiers.join(', '))}</div><div>${esc(r.memo)}</div><button type="button" class="btn-pay" data-action="pay-zelle" data-request="${r.index}" ${vm.ready ? '' : 'disabled'}>Copy payment ${r.index}</button></div>`).join('')}</div>` : '';
     if (method === 'venmo') {
-      const label = s.paymentBusy ? 'Saving order…' : vm.ready ? (vm.total === 0 ? 'Submit free order' : 'Save order & open Venmo') : 'Enter details to pay';
+      const label = s.paymentBusy ? 'Saving order…' : vm.ready ? (vm.total === 0 ? 'Submit free order' : 'Save order & continue to Venmo') : 'Enter details to pay';
       if (state.venmoFallback[key] && vm.total === 0) return `<div class="fallback"><strong>Order saved · no payment due</strong><p>This order has a $0.00 balance.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
-      if (state.venmoFallback[key]) return `<div class="fallback"><strong>Order saved · one payment only</strong><p>Venmo should open with one payment to <a href="${VENMO_PROFILE_URL}" target="_blank" rel="noopener">@${VENMO_USERNAME}</a>, the total <strong>${money(vm.total)}</strong>, and this order note filled in.</p><a class="btn-pay venmo-profile-link" href="${esc(venmoLink(order(key)).paymentUrl)}" target="_blank" rel="noopener">Open prefilled Venmo payment <span aria-hidden="true">↗</span></a><div class="fallback-mono" data-role="venmo-note">${esc(vm.venmoNote)}</div><button type="button" class="copy-btn" data-action="copy" data-value-role="venmo-note">Copy payment note</button><p>Do not split this order into separate payments. Payment is not confirmed until DukeDrop verifies it.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
+      if (state.venmoFallback[key]) return `<div class="fallback"><strong>Order saved · one payment only</strong><p>Continue to Venmo to pay <a href="${VENMO_PROFILE_URL}">@${VENMO_USERNAME}</a> the total <strong>${money(vm.total)}</strong>. The order note is included.</p><a class="btn-pay venmo-profile-link" href="${esc(venmoLink(order(key)).paymentUrl)}">Open prefilled Venmo payment <span aria-hidden="true">↗</span></a><div class="fallback-mono" data-role="venmo-note">${esc(vm.venmoNote)}</div><button type="button" class="copy-btn" data-action="copy" data-value-role="venmo-note">Copy payment note</button><p>Do not split this order into separate payments. Payment is not confirmed until DukeDrop verifies it.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
       return `<button type="button" class="btn-pay" data-action="pay-venmo" ${vm.ready && !s.paymentBusy ? '' : 'disabled'}>${label}</button>`;
     }
     if (method === 'zelle') {
@@ -589,19 +589,13 @@ if (typeof document !== 'undefined') {
       const vm = buildVM(key);
       if (!vm.ready || state[key].paymentBusy || state[key].saved) return;
       const paymentOrder = { ...order(key) };
-      // Reserve one tab during the user gesture so mobile browsers can hand
-      // off to Venmo after the one-time order save completes.
-      const venmoWindow = vm.total > 0 ? window.open('about:blank', '_blank') : null;
-      if (venmoWindow) venmoWindow.opener = null;
       state[key].paymentBusy = true;
       render();
       if (!await saveOrder(key, paymentOrder)) {
-        venmoWindow?.close();
         state[key].paymentBusy = false;
         render();
         return;
       }
-      if (venmoWindow) venmoWindow.location.replace(venmoLink(paymentOrder).paymentUrl);
       state.venmoFallback[key] = true;
       state[key].paymentBusy = false;
       render();
