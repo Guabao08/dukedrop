@@ -1,5 +1,5 @@
 import { dashboardConfigured, passwordMatches, setDashboardSession } from '../../lib/dashboard-session.js';
-import { flushPosthog, posthog } from '../../lib/posthog.js';
+import { capturePosthog } from '../../lib/posthog.js';
 
 const failures = new Map();
 const MAX_FAILURES = 5;
@@ -25,9 +25,6 @@ export default async function handler(req, res) {
 
   failures.delete(forwarded);
   setDashboardSession(req, res, process.env.DASHBOARD_PASSWORD);
-  if (posthog) {
-    posthog.capture({ event: 'dashboard_sign_in_succeeded' });
-    await flushPosthog();
-  }
+  await capturePosthog('dashboard_sign_in_succeeded');
   return res.status(200).json({ ok: true });
 }

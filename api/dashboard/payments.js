@@ -1,7 +1,7 @@
 import { dashboardConfigured, hasDashboardSession } from '../../lib/dashboard-session.js';
 import { paymentSheetConfigured, readPaymentSheet } from '../../lib/public-payment-sheet.js';
 import { findPaymentMatches, paymentSheetHeaders } from '../../lib/payment-verification.js';
-import { flushPosthog, posthog } from '../../lib/posthog.js';
+import { capturePosthog } from '../../lib/posthog.js';
 import { flushPosthogLogs, logPaymentVerificationCompleted } from '../../lib/posthog-logs.js';
 
 function headers() {
@@ -68,19 +68,13 @@ export default async function handler(req, res) {
     const orders = await loadOrders();
     const matches = findPaymentMatches(orders, values);
     const synced = await syncMatchedOrders(matches.updates);
-    if (posthog) {
-      posthog.capture({
-        event: 'payment_verification_completed',
-        properties: {
-          updated_count: synced.updatedIds.length,
-          failed_count: synced.failed,
-          ambiguous_count: matches.ambiguous,
-          unpaid_row_count: matches.unpaidRows,
-          unmatched_count: matches.unmatched,
-        },
-      });
-      await flushPosthog();
-    }
+    await capturePosthog('payment_verification_completed', {
+      updated_count: synced.updatedIds.length,
+      failed_count: synced.failed,
+      ambiguous_count: matches.ambiguous,
+      unpaid_row_count: matches.unpaidRows,
+      unmatched_count: matches.unmatched,
+    });
     logPaymentVerificationCompleted({
       updatedCount: synced.updatedIds.length,
       failedCount: synced.failed,

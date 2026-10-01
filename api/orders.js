@@ -1,5 +1,5 @@
 import { syncTracking } from '../lib/carrier-tracking.js';
-import { flushPosthog, posthog } from '../lib/posthog.js';
+import { capturePosthog } from '../lib/posthog.js';
 import { flushPosthogLogs, logOrderCreated } from '../lib/posthog-logs.js';
 import { isPromoEligible, promoDiscountPercent } from '../promo-rules.js';
 
@@ -41,22 +41,16 @@ export default async function handler(req, res) {
     if (!response.ok) return res.status(502).json({ error: 'Could not save the order.' });
     const [saved] = await response.json();
     try { await syncTracking({ orderId: saved.id }); } catch { /* Order saved; tracking retries independently. */ }
-    if (posthog) {
-      posthog.capture({
-        event: 'order_created',
-        properties: {
-          service: row.service,
-          base_service: row.base_service,
-          order_size: row.order_size,
-          quantity: row.quantity,
-          fulfillment_mode: row.fulfillment_mode,
-          payment_method: row.payment_method,
-          discount_percent: row.discount_percent,
-          amount_due: row.amount_due,
-        },
-      });
-      await flushPosthog();
-    }
+    await capturePosthog('order_created', {
+      service: row.service,
+      base_service: row.base_service,
+      order_size: row.order_size,
+      quantity: row.quantity,
+      fulfillment_mode: row.fulfillment_mode,
+      payment_method: row.payment_method,
+      discount_percent: row.discount_percent,
+      amount_due: row.amount_due,
+    });
     logOrderCreated({ service: row.service, quantity: row.quantity });
     await flushPosthogLogs();
     return res.status(201).json({ id: saved.id });

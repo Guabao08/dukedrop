@@ -1,6 +1,6 @@
 import { dashboardConfigured, hasDashboardSession } from '../../lib/dashboard-session.js';
 import { storage, trackingConfigured, syncTracking, carrierName } from '../../lib/carrier-tracking.js';
-import { flushPosthog, posthog } from '../../lib/posthog.js';
+import { capturePosthog } from '../../lib/posthog.js';
 import { flushPosthogLogs, logTrackingSyncCompleted } from '../../lib/posthog-logs.js';
 const uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 export default async function handler(req, res) {
@@ -13,18 +13,12 @@ export default async function handler(req, res) {
     if (req.method === 'DELETE') {
       if (!uuid(req.body?.id)) return res.status(400).json({ error: 'Invalid tracking record.' });
       await storage(`order_trackers?id=eq.${req.body.id}`, { method: 'DELETE' });
-      if (posthog) {
-        posthog.capture({ event: 'tracking_record_deleted' });
-        await flushPosthog();
-      }
+      await capturePosthog('tracking_record_deleted');
       return res.status(200).json({ ok: true });
     }
     if (req.body?.action === 'sync') {
       const result = await syncTracking();
-      if (posthog) {
-        posthog.capture({ event: 'tracking_sync_completed' });
-        await flushPosthog();
-      }
+      await capturePosthog('tracking_sync_completed');
       logTrackingSyncCompleted();
       await flushPosthogLogs();
       return res.status(200).json(result);
@@ -44,13 +38,7 @@ export default async function handler(req, res) {
     await storage(`orders?id=eq.${order_id}`, { method: 'PATCH', body: { tracking_followup_status: 'received', tracking_received_at: new Date().toISOString(), tracking_followup_due_at: null } });
     // Save first: a provider outage must not discard the supplied tracking number.
     try { await syncTracking({ orderId: order_id }); } catch { /* queued for the next sync */ }
-    if (posthog) {
-      posthog.capture({
-        event: 'tracking_record_created',
-        properties: { carrier: carrierToken, items_count },
-      });
-      await flushPosthog();
-    }
+    await capturePosthog('tracking_record_created', { carrier: carrierToken, items_count });
     return res.status(201).json({ ok: true });
   } catch { return res.status(502).json({ error: 'Could not update tracking. Please try again.' }); }
 }

@@ -1,5 +1,5 @@
 import { dashboardConfigured, hasDashboardSession } from '../../lib/dashboard-session.js';
-import { flushPosthog, posthog } from '../../lib/posthog.js';
+import { capturePosthog } from '../../lib/posthog.js';
 import { flushPosthogLogs, logDashboardOrderUpdated } from '../../lib/posthog-logs.js';
 
 const ORDER_STATUSES = new Set(['payment_started', 'received', 'in_progress', 'completed', 'cancelled']);
@@ -48,10 +48,7 @@ export default async function handler(req, res) {
       if (!response.ok) return res.status(502).json({ error: 'Could not delete the order.' });
       const deleted = await response.json();
       if (!Array.isArray(deleted) || deleted.length !== 1) return res.status(404).json({ error: 'Order not found.' });
-      if (posthog) {
-        posthog.capture({ event: 'dashboard_order_deleted' });
-        await flushPosthog();
-      }
+      await capturePosthog('dashboard_order_deleted');
       return res.status(200).json({ ok: true });
     }
 
@@ -77,13 +74,7 @@ export default async function handler(req, res) {
       method: 'PATCH', headers: { ...headers(), Prefer: 'return=minimal' }, body: JSON.stringify({ ...updates, ...(('pickup_readiness' in updates || 'pickup_note' in updates) ? { pickup_updated_at: new Date().toISOString() } : {}) }),
     });
     if (!response.ok) return res.status(502).json({ error: 'Could not update the order.' });
-    if (posthog) {
-      posthog.capture({
-        event: 'dashboard_order_updated',
-        properties: { updated_fields: entries.map(([field]) => field) },
-      });
-      await flushPosthog();
-    }
+    await capturePosthog('dashboard_order_updated', { updated_fields: entries.map(([field]) => field) });
     logDashboardOrderUpdated({ updatedFields: entries.map(([field]) => field) });
     await flushPosthogLogs();
     return res.status(200).json({ ok: true });
