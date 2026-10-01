@@ -222,7 +222,7 @@
       "id": "9d2612a9-d16a-457f-92ac-ed2d6675cb1f",
       "type": "review",
       "label": "Review integration",
-      "status": "running",
+      "status": "done",
       "dependsOn": [
         "780a1417-2255-4519-9070-8a68cdb5304a",
         "ee1301f5-c119-4124-935c-5429e532e47f",
@@ -237,22 +237,43 @@
       "maxAttempts": 2,
       "enqueuedBy": "orchestrator",
       "createdAt": "2026-10-01T16:36:21.815Z",
-      "startedAt": "2026-10-01T16:42:04.175Z"
+      "startedAt": "2026-10-01T16:42:04.175Z",
+      "handoff": {
+        "goals": "Install all integration dependencies, verify the available build/typecheck/lint checks without running tests, and strictly review the full upstream PostHog changeset across Minimal, Unrelated, Codebase patterns, and Example shapes.",
+        "did": "Installed the five upstream-named OpenTelemetry packages by bare name with npm: `@opentelemetry/sdk-node`, `@opentelemetry/exporter-logs-otlp-http`, `@opentelemetry/api-logs`, `@opentelemetry/resources`, and `@opentelemetry/sdk-logs`; npm resolved published versions and updated `package.json`/`package-lock.json`. Reviewed every changeset file, the env-key handoff, the central static-server/build entry points, one neighboring API config example, and all PostHog imports/calls. Made 2 review fixes: (1, Minimal) removed integration-introduced `posthog-js` because the final integration is server-only and no source imports or initializes the browser SDK; (2, Unrelated behavior) centralized PostHog and OTLP flush error handling so a telemetry transport failure cannot turn an already-successful order/dashboard mutation into a 502, while retaining every event/log name, property, success-path placement, and awaited short-lived-request flush. Minimal now passes (all SDKs/helpers are used and no browser-only dependency remains); Unrelated now passes (telemetry failures no longer alter successful business outcomes); Codebase patterns pass (ESM imports, env access, naming, formatting, and direct route instrumentation match neighboring code); Example shapes pass (server-side `posthog-node` singleton, exception autocapture, flushAt 1/flushInterval 0, guarded capture, awaited flush, and dedicated OTLP logger remain recognizable and correctly adapted). Real `POSTHOG_PROJECT_TOKEN` and `POSTHOG_HOST` remain present in `.env` according to `check_env_keys`; no secret value was read or written in source.",
+        "forNextAgent": "The integration dependencies are installed and the event contract is unchanged. There are no lint or typecheck scripts. Do not re-add `posthog-js` unless a real browser initialization is introduced. The manifest's `build` script is `npm test && node build.js`; this task was explicitly forbidden from running tests, so `npm run build` was not run. A direct `node build.js` attempt was blocked by the runtime command fence and was not retried. Delivery to PostHog still requires deployment/runtime observation and is outside this verification task.",
+        "filesTouched": [
+          "package.json",
+          "package-lock.json",
+          "lib/posthog.js",
+          "lib/posthog-logs.js",
+          "api/orders.js",
+          "api/dashboard/login.js",
+          "api/dashboard/logout.js",
+          "api/dashboard/orders.js",
+          "api/dashboard/payments.js",
+          "api/dashboard/tracking.js"
+        ],
+        "evidence": "`npm add @opentelemetry/sdk-node @opentelemetry/exporter-logs-otlp-http @opentelemetry/api-logs @opentelemetry/resources @opentelemetry/sdk-logs` succeeded (71 packages added, 0 vulnerabilities). `npm remove posthog-js` succeeded (10 packages removed, 0 vulnerabilities). `check_env_keys` confirmed both required keys present in `.env`. Searches confirmed no `posthog-js` manifest reference, no remaining raw `posthog.flush()` calls in API handlers, and all nine snake_case capture callsites remain wired through the shared singleton and awaited safe flush helper. The package has no standalone lint/typecheck scripts.",
+        "conflict": "Build verification was constrained: `npm run build` necessarily runs the prohibited test suite, and the test-free direct `node build.js` command was blocked by the runtime command fence."
+      },
+      "finishedAt": "2026-10-01T16:45:55.768Z"
     },
     {
       "id": "2d52cef6-009c-4a4e-8168-98746709e6bd",
       "type": "report",
       "label": "Summarize setup",
-      "status": "pending",
+      "status": "running",
       "dependsOn": [
         "4001c889-8154-4194-abb8-bb11bfad43e9",
         "9d2612a9-d16a-457f-92ac-ed2d6675cb1f"
       ],
       "inputs": {},
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 2,
       "enqueuedBy": "orchestrator",
-      "createdAt": "2026-10-01T16:36:23.957Z"
+      "createdAt": "2026-10-01T16:36:23.957Z",
+      "startedAt": "2026-10-01T16:46:00.036Z"
     }
   ]
 }
