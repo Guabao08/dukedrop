@@ -134,7 +134,11 @@ $('#sign-in-form').addEventListener('submit', async event => {
   event.preventDefault(); $('#sign-in').disabled = true; $('#login-message').textContent = 'Signing in…';
   try {
     const response = await fetch('/api/dashboard/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: $('#password').value }) });
-    const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Sign in failed.');
+    const body = await response.text();
+    let result;
+    try { result = body ? JSON.parse(body) : {}; }
+    catch { result = { error: `Sign-in service returned an invalid response (${response.status}). ${body.trim().slice(0, 180) || 'Please try again.'}` }; }
+    if (!response.ok) throw new Error(result.error || `Sign in failed (${response.status}).`);
     $('#password').value = ''; await load(); if (!$('#dashboard').hidden) syncCarriers(true);
   } catch (error) { $('#login-message').textContent = error.message; }
   finally { $('#sign-in').disabled = false; }
