@@ -5,6 +5,7 @@ import { PROMO_CODES, isPromoEligible, promoDiscountPercent, promoMessage } from
 export { PROMO_CODES, isPromoEligible, promoDiscountPercent, promoMessage };
 
 export const VENMO_USERNAME = 'dukedrop';
+const VENMO_PROFILE_URL = `https://venmo.com/u/${VENMO_USERNAME}`;
 export const ZELLE_DISPLAY = '(469) 964-9545';
 export const ZELLE_DIGITS = ZELLE_DISPLAY.replace(/\D/g, '');
 export const CONSENT_PHONE = '2019160008';
@@ -145,7 +146,7 @@ export function splitPaymentRequests(o) {
   const chunks = [];
   for (const identifier of identifiers) {
     const candidate = [...(chunks.at(-1) || []), identifier];
-    const memo = buildMemo({ ...o, tracking: candidate.join('\\n') });
+    const memo = buildMemo({ ...o, tracking: candidate.join('\n') });
     if (memo.length > PAYMENT_MEMO_MAX_LENGTH) {
       if (!chunks.length) throw new Error(`Tracking/order number is too long to fit in a payment memo; please shorten/check it: ${identifier}`);
       chunks.push([identifier]);
@@ -159,7 +160,7 @@ export function splitPaymentRequests(o) {
   const remainder = totalCents % chunks.length;
   return chunks.map((ids, i) => {
     const amountCents = base + (i < remainder ? 1 : 0);
-    const memo = buildMemo({ ...o, tracking: ids.join('\\n') });
+    const memo = buildMemo({ ...o, tracking: ids.join('\n') });
     return { index: i + 1, total: chunks.length, identifiers: ids, amountCents, amount: (amountCents / 100).toFixed(2), memo };
   });
 }
@@ -182,7 +183,11 @@ export function validateOrder(o) {
   if (!/^\+?[\d ()-]{7,20}$/.test(String(o.phone ?? '').trim())) missing.push('valid phone number');
   if (o.service !== 'returns' && normalizeTrackingNumbers(o.tracking).length && !String(o.carrier ?? '').trim()) missing.push('carrier');
   if (missing.length === 0) {
-    try { splitPaymentRequests(o); } catch (error) { missing.push(error.message); }
+    // Venmo is one payment with one shortened note; only Zelle needs requests
+    // split around identifiers to fit the receiving bank's memo field.
+    if (o.payMethod !== 'venmo') {
+      try { splitPaymentRequests(o); } catch (error) { missing.push(error.message); }
+    }
   }
   if (isPickupStyle(o.service, o.mode)) {
     if (o.source === 'locker') {
@@ -197,19 +202,50 @@ export function validateOrder(o) {
   return { valid: missing.length === 0, missing };
 }
 
-export function venmoLink(o, request) {
-  const v = validateOrder(o);
+function venmoNote(o) {
+  const full = buildMemo(o);
+  if (full.length <= PAYMENT_MEMO_MAX_LENGTH) return full;
+  const identifiers = o.service === 'returns' ? [] : normalizeTrackingNumbers(o.tracking);
+  if (!identifiers.length) return `${full.slice(0, PAYMENT_MEMO_MAX_LENGTH - 1).trimEnd()}…`;
+  const trackingHeader = ` — ${o.carrier || '[Carrier]'} tracking:`;
+  const fixed = buildMemo({ ...o, carrier: '', tracking: '' });
+  const kept = [];
+  const makeNote = (ids, remaining = 0) => `${fixed}${trackingHeader}${ids.length ? ` ${ids.join(', ')}` : ''}${remaining ? ` +${remaining} more` : ''}`;
+  for (const identifier of identifiers) {
+    const candidate = [...kept, identifier];
+    if (makeNote(candidate).length > PAYMENT_MEMO_MAX_LENGTH) break;
+    kept.push(identifier);
+  }
+  let note = makeNote(kept, identifiers.length - kept.length);
+  while (note.length > PAYMENT_MEMO_MAX_LENGTH && kept.length) {
+    kept.pop();
+    note = makeNote(kept, identifiers.length - kept.length);
+  }
+  return note.length <= PAYMENT_MEMO_MAX_LENGTH ? note : `${full.slice(0, PAYMENT_MEMO_MAX_LENGTH - 1).trimEnd()}…`;
+}
+
+export function venmoLink(o) {
+  const v = validateOrder({ ...o, payMethod: 'venmo' });
   if (!v.valid) throw new Error(`Missing: ${v.missing.join(', ')}`);
-  const payment = request || splitPaymentRequests(o)[0];
-  const amount = payment.amount;
-  const note = payment.memo;
+  const amount = calculateOrderTotal(o.service, o.quantity, o.promoCode).toFixed(2);
+  const note = venmoNote(o);
+  // Venmo's payment handoff accepts one recipient and one amount/note. Keep
+  // this as a single transaction URL so Venmo cannot interpret the order as
+  // multiple recipients or payment requests.
+  const paymentUrl = new URL('https://venmo.com/');
+  paymentUrl.search = new URLSearchParams({
+    txn: 'pay',
+    recipients: VENMO_USERNAME,
+    amount,
+    note,
+  }).toString();
   return {
     amount,
     note,
-    // Venmo payment deep link. Venmo does not formally guarantee this format,
-    // so the UI keeps an amount/note fallback visible after handoff.
-    deepLink: `https://venmo.com/${VENMO_USERNAME}?txn=pay&recipients=${encodeURIComponent(VENMO_USERNAME)}&amount=${encodeURIComponent(amount)}&note=${encodeURIComponent(note)}`,
-    profileUrl: `https://venmo.com/u/${VENMO_USERNAME}`,
+    recipient: VENMO_USERNAME,
+    paymentUrl: paymentUrl.toString(),
+    appUrl: `venmo://paycharge?${paymentUrl.searchParams.toString().replace(/\+/g, '%20')}`,
+    profileUrl: VENMO_PROFILE_URL,
   };
 }
 
@@ -222,7 +258,8 @@ if (typeof document !== 'undefined') {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   const makeServiceState = (service) => ({
-    qty: 1, dorm: '', room: '', carrier: '', tracking: '', payMethod: 'venmo',
+    qty: 1, dorm: '', room: '', carrier: '', tracking: '', payMethod: 'venmo', paymentBusy: false,
+    stripeClientSecret: '', stripeError: '', stripeFreeOrder: false,
     ...(service === 'pickup' || service === 'bigdrop' ? { source: 'mailbox', mailroom: '', box: '', lockerLocation: '', locker: '', name: '' } : {}),
     size: 'standard',
     ...(service === 'bigdrop' ? { mode: 'ship' } : {}),
@@ -240,9 +277,11 @@ if (typeof document !== 'undefined') {
   };
 
   const app = document.getElementById('app');
+  let stripeReady = false;
 
   function order(key) {
     const s = state[key];
+    if (s.savedOrder) return s.savedOrder;
     const service = s.size === 'bigdrop' ? 'bigdrop' : key;
     const promoCode = isPromoEligible(state.promoCode, s) ? state.promoCode : '';
     return { service, baseService: key, orderSize: s.size, quantity: s.qty, dorm: s.dorm, room: s.room, phone: s.phone || '', carrier: s.carrier, tracking: s.tracking, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name, mode: s.mode, promoCode, payMethod: s.payMethod };
@@ -265,7 +304,7 @@ if (typeof document !== 'undefined') {
     return {
       key, detail, tierIndex, total, subText: promoPercent ? `${s.qty} × ${money(tier.rate)} · ${promoPercent}% off (${money(subtotal)} → ${money(total)})` : `${s.qty} × ${money(tier.rate)}`,
       promoPercent, promoEntered: state.promoCode.trim(), promoHint: promoMessage(state.promoCode, s),
-      memo: buildMemo(o), ready: v.valid, missing: v.missing,
+      memo: buildMemo(o), venmoNote: venmoNote(o), ready: v.valid, missing: v.missing,
       isLocker, showConsent, consentText, pickupStyle,
       requests: (() => { try { return splitPaymentRequests(o); } catch { return []; } })(),
       zelleLine: zelleLine(o),
@@ -361,18 +400,28 @@ if (typeof document !== 'undefined') {
     const s = state[key];
     const method = s.payMethod;
     const requests = vm.requests;
-    const requestSummary = requests.length > 1 ? `<div class="payment-requests"><strong>Payment requests</strong>${requests.map((r) => `<div class="payment-request"><div>Payment ${r.index} of ${r.total}: <strong>${money(r.amountCents / 100)}</strong></div><div class="fallback-mono">${esc(r.identifiers.join(', '))}</div><div>${esc(r.memo)}</div><button type="button" class="btn-pay" data-action="${method === 'venmo' ? 'pay-venmo' : 'pay-zelle'}" data-request="${r.index}" ${vm.ready ? '' : 'disabled'}>${method === 'venmo' ? 'Open' : 'Copy'} payment ${r.index}</button></div>`).join('')}</div>` : '';
+    const requestSummary = method === 'zelle' && requests.length > 1 ? `<div class="payment-requests"><strong>Payment requests</strong>${requests.map((r) => `<div class="payment-request"><div>Payment ${r.index} of ${r.total}: <strong>${money(r.amountCents / 100)}</strong></div><div class="fallback-mono">${esc(r.identifiers.join(', '))}</div><div>${esc(r.memo)}</div><button type="button" class="btn-pay" data-action="pay-zelle" data-request="${r.index}" ${vm.ready ? '' : 'disabled'}>Copy payment ${r.index}</button></div>`).join('')}</div>` : '';
     if (method === 'venmo') {
-      const label = vm.ready ? `Pay ${money(vm.total)} with Venmo` : 'Enter details to pay';
-      return `${requestSummary || `<button type="button" class="btn-pay" data-action="pay-venmo" ${vm.ready ? '' : 'disabled'}>${label}</button>`}
-        ${state.venmoFallback[key] ? `<div class="fallback"><strong>Finish in Venmo</strong><p>Pay <strong>${money(vm.total)}</strong> to <a href="https://venmo.com/u/${VENMO_USERNAME}" target="_blank" rel="noopener">@${VENMO_USERNAME}</a>.</p><p>Paste this payment note:</p><div class="fallback-mono" data-role="venmo-note">${esc(vm.memo)}</div><button type="button" class="copy-btn" data-action="copy" data-value-role="venmo-note">Copy note</button><p>DukeDrop does not confirm payment.</p></div>` : ''}`;
+      const label = s.paymentBusy ? 'Saving order…' : vm.ready ? (vm.total === 0 ? 'Submit free order' : 'Save order & continue to Venmo') : 'Enter details to pay';
+      if (state.venmoFallback[key] && vm.total === 0) return `<div class="fallback"><strong>Order saved · no payment due</strong><p>This order has a $0.00 balance.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
+      if (state.venmoFallback[key]) {
+        const payment = venmoLink(order(key));
+        const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        // A fresh tap on a real link preserves the user gesture needed to open
+        // a mobile app. Never launch after awaiting saveOrder or a clipboard write.
+        return `<div class="fallback"><strong>Order saved · ready to pay</strong><p>Pay <strong>@${VENMO_USERNAME}</strong> exactly <strong>${money(Number(payment.amount))}</strong>. Copy the note below before opening Venmo.</p><div class="fallback-mono" data-role="venmo-note">${esc(payment.note)}</div><button type="button" class="copy-btn" data-action="copy" data-value-role="venmo-note">Copy payment note</button><button type="button" class="copy-btn" data-action="copy" data-value="${esc(payment.recipient)}">Copy recipient</button><button type="button" class="copy-btn" data-action="copy" data-value="${esc(payment.amount)}">Copy amount</button><a class="btn-pay venmo-profile-link" href="${esc(mobile ? payment.appUrl : payment.paymentUrl)}">${mobile ? 'Open Venmo app' : 'Continue to Venmo'} <span aria-hidden="true">↗</span></a><p>If the payment details are not filled in, paste the recipient, amount, and note above. Check all three before paying.</p><p><a href="${payment.profileUrl}">Open @${VENMO_USERNAME}’s Venmo profile</a> if the app link does not open. In an Instagram or other in-app browser, open this page in Safari or Chrome first.</p><p>Send one payment for this order. Payment is confirmed after DukeDrop matches it to the payment sheet.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
+      }
+      return `<button type="button" class="btn-pay" data-action="pay-venmo" ${vm.ready && !s.paymentBusy ? '' : 'disabled'}>${label}</button>`;
     }
     if (method === 'zelle') {
       const label = vm.ready ? `Pay ${money(vm.total)} with Zelle` : 'Enter details to pay with Zelle';
       return `${requestSummary || `<button type="button" class="btn-pay" data-action="pay-zelle" ${vm.ready ? '' : 'disabled'}>${label}</button>`}
         ${state.zelleFallback[key] ? `<div class="fallback fallback-copied"><strong class="copied-flag">Note copied to clipboard</strong>Open your bank's app and send to <strong>${esc(ZELLE_DISPLAY)}</strong> — paste the note below if your bank allows one:<div class="fallback-mono" data-role="zelle-line">${esc(vm.zelleLine)}</div></div>` : ''}`;
     }
-    return `<div class="card-note">Card payments are launching soon — please use Venmo or Zelle for now.</div>`;
+    if (s.stripeFreeOrder) return `<div class="fallback"><strong>Order saved · no payment due</strong><p>This order has a $0.00 balance.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
+    if (!stripeReady) return `<div class="card-note">Card payments are being set up. Please use Venmo or Zelle for now.</div>`;
+    if (s.stripeClientSecret) return `<div id="checkout-form" aria-label="Secure card payment form"></div><p class="field-hint">Your card details are handled securely by Stripe.</p><p class="field-hint" data-role="stripe-confirmation" role="status"></p>`;
+    return `${s.stripeError ? `<p class="missing" role="alert">${esc(s.stripeError)}</p>` : ''}<button type="button" class="btn-pay" data-action="pay-card" ${vm.ready && !s.paymentBusy ? '' : 'disabled'}>${s.paymentBusy ? 'Preparing secure checkout…' : vm.ready ? `Pay ${money(vm.total)} with card` : 'Enter details to pay by card'}</button>`;
   }
 
   function cardHtml(key) {
@@ -436,7 +485,15 @@ if (typeof document !== 'undefined') {
   function render() {
     const key = state.active;
     app.innerHTML = `${tabsHtml()}${cardHtml(key)}`;
+    if (state[key].saved || state[key].paymentBusy) app.querySelectorAll('[data-field], [data-action="size"], [data-action="source"], [data-action="mode"], [data-action="qty-dec"], [data-action="qty-inc"], [data-action="paymethod"]').forEach(control => { control.disabled = true; });
   }
+
+  fetch('/api/config', { cache: 'no-store' }).then(response => response.ok ? response.json() : null).then(config => {
+    stripeReady = Boolean(config?.stripeReady && config?.stripePublishableKey);
+    const active = state.active;
+    const panel = app.querySelector('[data-role="payment-panel"]');
+    if (panel && state[active].payMethod === 'card') panel.innerHTML = paymentPanelHtml(active, buildVM(active));
+  }).catch(() => {});
 
   // Cheap refresh of computed text/attributes without touching input elements,
   // so typing in a field never resets its cursor position.
@@ -507,9 +564,39 @@ if (typeof document !== 'undefined') {
       const ta = document.createElement('textarea');
       ta.value = value; ta.style.position = 'fixed'; ta.style.opacity = '0';
       document.body.appendChild(ta); ta.focus(); ta.select();
-      document.execCommand('copy'); document.body.removeChild(ta);
-      done();
+      const copied = document.execCommand('copy'); document.body.removeChild(ta);
+      if (copied) done();
     } catch { /* clipboard unavailable; button simply won't flip to Copied */ }
+  }
+
+  async function mountStripeCheckout(clientSecret) {
+    const configResponse = await fetch('/api/config', { cache: 'no-store' });
+    if (!configResponse.ok) throw new Error('Stripe configuration could not be loaded.');
+    const config = await configResponse.json();
+    if (!config.stripePublishableKey || typeof window.Stripe !== 'function') throw new Error('Stripe is not configured on this site yet.');
+    const stripe = window.Stripe(config.stripePublishableKey, { betas: ['custom_checkout_payment_form_1'] });
+    const appearance = {
+      theme: 'stripe', labels: 'auto', inputs: 'spaced',
+      variables: {
+        borderRadius: '4px', colorBackground: '#ffffff', colorDanger: '#df1b41',
+        colorPrimary: '#0570de', colorSuccess: '#00c853', colorText: '#30313d',
+        fontFamily: 'default', fontSizeBase: '16px', spacingUnit: '4px',
+      },
+    };
+    const checkout = await stripe.initCheckoutFormSdk({ clientSecret, appearance });
+    const form = checkout.createForm({ layout: 'expanded' });
+    form.mount('#checkout-form');
+    const loadActionsResult = await checkout.loadActions();
+    if (loadActionsResult.type !== 'success') throw new Error('Stripe could not load the secure payment form. Refresh and try again.');
+    form.on('confirm', async event => {
+      const status = app.querySelector('[data-role="stripe-confirmation"]');
+      try {
+        await loadActionsResult.actions.confirm({ formConfirmEvent: event });
+        if (status) status.textContent = 'Payment submitted securely. Save your Stripe receipt; staff will confirm the order in the dashboard.';
+      } catch (error) {
+        if (status) status.textContent = error?.message || 'Payment could not be confirmed. Please try again.';
+      }
+    });
   }
 
   app.addEventListener('click', async (e) => {
@@ -517,6 +604,16 @@ if (typeof document !== 'undefined') {
     if (!el) return;
     const key = state.active;
     const action = el.dataset.action;
+
+    if (state[key].saved && ['paymethod','size','source','mode','qty-dec','qty-inc'].includes(action)) return;
+
+    if (action === 'new-order') {
+      state[key] = makeServiceState(key);
+      state.venmoFallback[key] = false;
+      state.zelleFallback[key] = false;
+      render();
+      return;
+    }
 
     if (action === 'order-type') { state.active = el.dataset.type === 'bigdrop' ? 'bigdrop' : 'express'; render(); return; }
     if (action === 'size') { state[key].size = el.dataset.size; render(); return; }
@@ -539,15 +636,50 @@ if (typeof document !== 'undefined') {
     }
     if (action === 'pay-venmo') {
       const vm = buildVM(key);
-      if (!vm.ready) return;
-      const requests = buildVM(key).requests;
-      if (!await saveOrder(key)) return;
-      const link = venmoLink(order(key), requests[(Number(el.dataset.request) || 1) - 1]);
-      const payment = requests[(Number(el.dataset.request) || 1) - 1];
-      copy(payment.memo, () => {});
-      window.open(link.deepLink, '_blank', 'noopener');
-      state.venmoFallback[key] = true;
+      if (!vm.ready || state[key].paymentBusy || state[key].saved) return;
+      const paymentOrder = { ...order(key) };
+      state[key].paymentBusy = true;
       render();
+      if (!await saveOrder(key, paymentOrder)) {
+        state[key].paymentBusy = false;
+        render();
+        return;
+      }
+      state.venmoFallback[key] = true;
+      state[key].paymentBusy = false;
+      render();
+      return;
+    }
+    if (action === 'pay-card') {
+      const vm = buildVM(key);
+      if (!vm.ready || state[key].paymentBusy || state[key].saved) return;
+      const paymentOrder = { ...order(key), payMethod: 'card' };
+      state[key].paymentBusy = true; state[key].stripeError = ''; render();
+      let checkoutRendered = false;
+      if (vm.total === 0) {
+        if (await saveOrder(key, paymentOrder)) state[key].stripeFreeOrder = true;
+        else state[key].stripeError = 'We could not save your order. Please contact DukeDrop before continuing.';
+        state[key].paymentBusy = false; render(); return;
+      }
+      try {
+        const response = await fetch('/api/create-checkout-session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order: paymentOrder }) });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || 'Could not start Stripe checkout.');
+        if (!body.client_secret) throw new Error('Stripe did not return a Checkout client secret.');
+        if (!await saveOrder(key, paymentOrder)) throw new Error('We could not save your order. Please contact DukeDrop before paying.');
+        state[key].stripeClientSecret = body.client_secret;
+        render();
+        checkoutRendered = true;
+        await mountStripeCheckout(body.client_secret);
+      } catch (error) {
+        if (checkoutRendered) {
+          const status = app.querySelector('[data-role="stripe-confirmation"]');
+          if (status) status.textContent = error.message || 'Could not load the secure payment form. Please refresh the page.';
+        } else state[key].stripeError = error.message || 'Could not start Stripe checkout.';
+      } finally {
+        state[key].paymentBusy = false;
+        if (!checkoutRendered) render();
+      }
       return;
     }
     if (action === 'pay-zelle') {
@@ -563,17 +695,27 @@ if (typeof document !== 'undefined') {
     }
   });
 
-  async function saveOrder(key) {
+  async function saveOrder(key, orderSnapshot = { ...order(key) }) {
     try {
       const configResponse = await fetch('/api/config');
-      if (configResponse.status === 404 && ['localhost', '127.0.0.1'].includes(location.hostname)) return true;
+      if (configResponse.status === 404 && ['localhost', '127.0.0.1'].includes(location.hostname)) {
+        state[key].savedOrder = orderSnapshot;
+        state[key].saved = true;
+        return true;
+      }
       if (!configResponse.ok) throw new Error('Order storage configuration is unavailable.');
       const config = await configResponse.json();
-      if (!config.orderStorageEnabled) return true;
-      const o = order(key);
+      const o = { ...orderSnapshot };
+      if (!config.orderStorageEnabled) {
+        state[key].savedOrder = o;
+        state[key].saved = true;
+        return true;
+      }
       if (state[key].saved) return true;
       const response = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
       if (!response.ok) throw new Error('Order could not be saved. Please contact DukeDrop.');
+      const saved = await response.json();
+      state[key].savedOrder = { ...o, orderId: saved.id };
       state[key].saved = true;
       return true;
     } catch {
@@ -588,6 +730,7 @@ if (typeof document !== 'undefined') {
   app.addEventListener('input', (e) => {
     const field = e.target.dataset.field;
     if (!field) return;
+    if (state[state.active].saved || state[state.active].paymentBusy) { render(); return; }
     if (field === 'promoCode') { state.promoCode = e.target.value; updateDerived(); return; }
     const key = state.active;
     if (field === 'qty') { setQty(key, e.target.value); updateDerived(); return; }
