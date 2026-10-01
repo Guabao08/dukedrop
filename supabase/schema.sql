@@ -3,6 +3,9 @@ create extension if not exists pgcrypto;
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
+  payment_time text,
+  email_id text,
+  package_name text,
   service text not null check (service in ('express','pickup','returns','bigdrop')),
   base_service text not null default 'express' check (base_service in ('express','pickup','returns')),
   order_size text not null default 'standard' check (order_size in ('standard','bigdrop')),

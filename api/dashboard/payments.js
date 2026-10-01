@@ -1,6 +1,8 @@
 import { dashboardConfigured, hasDashboardSession } from '../../lib/dashboard-session.js';
 import { paymentSheetConfigured, readPaymentSheet } from '../../lib/public-payment-sheet.js';
 import { findPaymentMatches, paymentSheetHeaders } from '../../lib/payment-verification.js';
+import { flushPosthog, posthog } from '../../lib/posthog.js';
+import { flushPosthogLogs, logPaymentVerificationCompleted } from '../../lib/posthog-logs.js';
 
 function headers() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -10,7 +12,7 @@ function headers() {
 async function loadOrders() {
   const base = `${process.env.SUPABASE_URL}/rest/v1/orders`;
   const url = new URL(base);
-  url.searchParams.set('select', 'id,service,base_service,quantity,dorm,room,carrier,tracking,amount_due,payment_method,payment_status');
+  url.searchParams.set('select', 'id,service,base_service,quantity,dorm,room,carrier,tracking,amount_due,payment_method,payment_status,recipient_name');
   url.searchParams.set('order', 'created_at.asc,id.asc');
   const orders = [];
   for (let offset = 0; ; offset += 500) {
@@ -25,21 +27,31 @@ async function loadOrders() {
   }
 }
 
-async function markPaid(ids) {
+async function syncMatchedOrders(matches) {
   const base = `${process.env.SUPABASE_URL}/rest/v1/orders`;
-  for (let offset = 0; offset < ids.length; offset += 100) {
-    const batch = ids.slice(offset, offset + 100);
-    const url = new URL(base);
-    url.searchParams.set('id', `in.(${batch.join(',')})`);
-    url.searchParams.set('payment_status', 'eq.unconfirmed');
-    const response = await fetch(url, {
-      method: 'PATCH',
-      headers: { ...headers(), Prefer: 'return=minimal' },
-      body: JSON.stringify({ payment_status: 'paid' }),
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!response.ok) throw new Error('Could not update payment status.');
+  const updatedIds = [];
+  let failed = 0;
+  for (let offset = 0; offset < matches.length; offset += 10) {
+    const batch = matches.slice(offset, offset + 10);
+    const results = await Promise.all(batch.map(async match => {
+      try {
+        const url = new URL(base);
+        url.searchParams.set('id', `eq.${match.id}`);
+        url.searchParams.set('payment_status', 'neq.refunded');
+        const response = await fetch(url, {
+          method: 'PATCH',
+          headers: { ...headers(), Prefer: 'return=representation' },
+          body: JSON.stringify(match.updates),
+          signal: AbortSignal.timeout(20_000),
+        });
+        if (!response.ok) return false;
+        const rows = await response.json();
+        return Array.isArray(rows) && rows.length === 1;
+      } catch { return false; }
+    }));
+    results.forEach((ok, index) => ok ? updatedIds.push(batch[index].id) : failed++);
   }
+  return { updatedIds, failed };
 }
 
 export default async function handler(req, res) {
@@ -55,13 +67,33 @@ export default async function handler(req, res) {
     if (!paymentSheetHeaders(values)) return res.status(422).json({ error: 'The payment sheet columns do not match the expected Orders tab.' });
     const orders = await loadOrders();
     const matches = findPaymentMatches(orders, values);
-    await markPaid(matches.confirmedIds);
+    const synced = await syncMatchedOrders(matches.updates);
+    if (posthog) {
+      posthog.capture({
+        event: 'payment_verification_completed',
+        properties: {
+          updated_count: synced.updatedIds.length,
+          failed_count: synced.failed,
+          ambiguous_count: matches.ambiguous,
+          unpaid_row_count: matches.unpaidRows,
+          unmatched_count: matches.unmatched,
+        },
+      });
+      await flushPosthog();
+    }
+    logPaymentVerificationCompleted({
+      updatedCount: synced.updatedIds.length,
+      failedCount: synced.failed,
+      ambiguousCount: matches.ambiguous,
+    });
+    await flushPosthogLogs();
     return res.status(200).json({
-      confirmed: matches.confirmedIds.length,
+      updated: synced.updatedIds.length,
+      failed: synced.failed,
       ambiguous: matches.ambiguous,
       unpaidRows: matches.unpaidRows,
       unmatched: matches.unmatched,
-      confirmedIds: matches.confirmedIds,
+      updatedIds: synced.updatedIds,
     });
   } catch (error) {
     return res.status(502).json({ error: error.message === 'Payment sheet access is not configured.' ? error.message : 'Payment verification could not finish. Check the sheet connection and try again.' });

@@ -1,10 +1,11 @@
 import { dashboardConfigured, passwordMatches, setDashboardSession } from '../../lib/dashboard-session.js';
+import { flushPosthog, posthog } from '../../lib/posthog.js';
 
 const failures = new Map();
 const MAX_FAILURES = 5;
 const LOCKOUT_MS = 15 * 60 * 1000;
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   if (!dashboardConfigured()) return res.status(503).json({ error: 'Dashboard access is not configured.' });
@@ -24,5 +25,9 @@ export default function handler(req, res) {
 
   failures.delete(forwarded);
   setDashboardSession(req, res, process.env.DASHBOARD_PASSWORD);
+  if (posthog) {
+    posthog.capture({ event: 'dashboard_sign_in_succeeded' });
+    await flushPosthog();
+  }
   return res.status(200).json({ ok: true });
 }

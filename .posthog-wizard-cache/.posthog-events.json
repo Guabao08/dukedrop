@@ -1,0 +1,47 @@
+[
+  {
+    "event": "order_created",
+    "description": "A customer successfully creates an order.",
+    "file": "api/orders.js"
+  },
+  {
+    "event": "dashboard_sign_in_succeeded",
+    "description": "An operator successfully signs in to the shared dashboard.",
+    "file": "api/dashboard/login.js"
+  },
+  {
+    "event": "dashboard_signed_out",
+    "description": "An operator signs out of the shared dashboard.",
+    "file": "api/dashboard/logout.js"
+  },
+  {
+    "event": "dashboard_order_updated",
+    "description": "An operator updates one or more order workflow fields.",
+    "file": "api/dashboard/orders.js"
+  },
+  {
+    "event": "dashboard_order_deleted",
+    "description": "An operator deletes an order after confirmation.",
+    "file": "api/dashboard/orders.js"
+  },
+  {
+    "event": "payment_verification_completed",
+    "description": "An operator completes a payment-sheet verification run.",
+    "file": "api/dashboard/payments.js"
+  },
+  {
+    "event": "tracking_record_created",
+    "description": "An operator adds a carrier tracking record to an order.",
+    "file": "api/dashboard/tracking.js"
+  },
+  {
+    "event": "tracking_record_deleted",
+    "description": "An operator deletes a carrier tracking record.",
+    "file": "api/dashboard/tracking.js"
+  },
+  {
+    "event": "tracking_sync_completed",
+    "description": "An operator completes a manual carrier-tracking sync.",
+    "file": "api/dashboard/tracking.js"
+  }
+]
