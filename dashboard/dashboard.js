@@ -10,6 +10,13 @@ let allOrders = [], queue = 'all', selectedId = null, loading = false, saving = 
 $('#today').textContent = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric' });
 function notice(message = '') { $('#message').textContent = message; $('#message').hidden = !message; }
 function toast(message) { clearTimeout(toastTimer); $('#toast').textContent = message; $('#toast').hidden = false; toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 4500); }
+async function responseError(response, fallback) {
+  const body = await response.text();
+  let payload;
+  try { payload = body ? JSON.parse(body) : null; } catch {}
+  const detail = payload?.error || body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220);
+  return detail ? `${fallback} (${response.status}): ${detail}` : `${fallback} (${response.status}).`;
+}
 function showLogin(message = '') {
   allOrders = []; selectedId = null; lastSync = null; paymentSheetConfigured = false; deleteConfirming = false;
   $('#order-dialog').close(); $('#order-details').replaceChildren(); $('#orders').replaceChildren(); $('#stats').replaceChildren(); $('#pickup-orders').replaceChildren(); $('#pickup-summary').replaceChildren(); trackingConfigured = false;
@@ -23,7 +30,7 @@ async function load() {
     const response = await fetch('/api/dashboard/orders', { cache: 'no-store' });
     if (response.status === 401) { showLogin(); return; }
     if (response.status === 503) { showLogin('Dashboard access is not configured yet.'); return; }
-    if (!response.ok) throw new Error('Could not refresh orders. Please try again.');
+    if (!response.ok) throw new Error(await responseError(response, 'Could not refresh orders'));
     const orders = await response.json();
     if (!Array.isArray(orders)) throw new Error('Could not read the order list.');
     allOrders = orders;
