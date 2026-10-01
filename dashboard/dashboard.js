@@ -1,11 +1,12 @@
 import { pickupReadiness, pickupLocation, READINESS_LABELS } from './readiness.js';
-import { ORDER_LABELS, PAYMENT_LABELS, FOLLOWUP_LABELS, SERVICE_LABELS, needsFollowup, filterOrders, summarizeOrders } from './order-model.js';
+import { ORDER_LABELS, PAYMENT_LABELS, FOLLOWUP_LABELS, SERVICE_LABELS, needsFollowup, filterOrders, summarizeOrders, summarizePromoUsage } from './order-model.js';
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const money = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value || 0));
 const date = (value, full = false) => value && !Number.isNaN(new Date(value).getTime()) ? new Date(value).toLocaleString('en-US', full ? { dateStyle: 'medium', timeStyle: 'short' } : { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Not provided';
 const queues = { tracking: ['Pickup readiness', 'Track all orders through collection.'], all: ['All orders', 'Your orders, newest first.'], active: ['Active deliveries', 'Orders still moving through your team’s workflow.'], unpaid: ['Payment review', 'Active orders with a balance awaiting payment confirmation.'], followup: ['Tracking follow-ups', 'Active orders whose tracking follow-up is due now.'], completed: ['Completed deliveries', 'The drops your team has finished.'] };
 let trackingConfigured = false, syncingCarriers = false, paymentSheetConfigured = false, verifyingPayments = false;
+let sheetPayments = [];
 let allOrders = [], queue = 'all', selectedId = null, loading = false, saving = false, deleteConfirming = false, toastTimer, lastSync = null, detailOpener = null;
 $('#today').textContent = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric' });
 function notice(message = '') { $('#message').textContent = message; $('#message').hidden = !message; }
@@ -18,6 +19,7 @@ async function responseError(response, fallback) {
   return detail ? `${fallback} (${response.status}): ${detail}` : `${fallback} (${response.status}).`;
 }
 function showLogin(message = '') {
+  sheetPayments = []; $('#sheet-payment-rows').replaceChildren(); $('#sheet-payment-summary').textContent = 'Sign in to sync payments.';
   allOrders = []; selectedId = null; lastSync = null; paymentSheetConfigured = false; deleteConfirming = false;
   $('#order-dialog').close(); $('#order-details').replaceChildren(); $('#orders').replaceChildren(); $('#stats').replaceChildren(); $('#pickup-orders').replaceChildren(); $('#pickup-summary').replaceChildren(); trackingConfigured = false;
   $('#dashboard').hidden = true; $('#login').hidden = false; $('#login-message').textContent = message; $('#toast').hidden = true;
@@ -35,12 +37,27 @@ async function load() {
     if (!Array.isArray(orders)) throw new Error('Could not read the order list.');
     allOrders = orders;
     try { const configResponse = await fetch('/api/dashboard/tracking', { cache: 'no-store' }); if (configResponse.ok) { trackingConfigured = Boolean((await configResponse.json()).configured); } } catch { trackingConfigured = false; }
-    paymentSheetConfigured = false;
+    paymentSheetConfigured = true;
     try {
-      const paymentResponse = await fetch('/api/dashboard/payments', { cache: 'no-store' });
-      if (paymentResponse.ok) paymentSheetConfigured = Boolean((await paymentResponse.json()).configured);
-    } catch { paymentSheetConfigured = false; }
-    $('#payment-sheet-state').textContent = paymentSheetConfigured ? 'Sheet connected' : 'Sheet access needs setup';
+      $('#payment-sheet-state').textContent = 'Syncing paid orders from sheet…';
+      const paymentResponse = await fetch('/api/dashboard/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'verify' }) });
+      if (paymentResponse.status === 401) { showLogin('Your session expired. Please sign in again.'); return; }
+      if (!paymentResponse.ok) throw new Error(await responseError(paymentResponse, 'Payment sync failed'));
+      const result = await paymentResponse.json();
+      sheetPayments = result.sheetPayments || [];
+      renderSheetPayments();
+      if (result.updated) {
+        const refreshed = await fetch('/api/dashboard/orders', { cache: 'no-store' });
+        if (!refreshed.ok) throw new Error('Payments saved. Refresh to reload updated orders.');
+        const updatedOrders = await refreshed.json();
+        if (!Array.isArray(updatedOrders)) throw new Error('Payments saved. Could not read updated orders.');
+        allOrders = updatedOrders;
+      }
+      $('#payment-sheet-state').textContent = `${sheetPayments.length} paid in sheet · ${result.updated} orders updated${result.failed ? ` · ${result.failed} saves failed` : ''}`;
+    } catch (error) {
+      $('#payment-sheet-state').textContent = error.message;
+      $('#sheet-payment-summary').textContent = `Sheet sync failed. ${sheetPayments.length ? 'Showing the last successful sync.' : 'Paid records could not be loaded.'} ${error.message}`;
+    }
     $('#verify-payments').disabled = !paymentSheetConfigured || verifyingPayments;
     $('#tracking-connection').textContent = trackingConfigured ? 'Carrier integration configured' : 'Carrier connection needed';
     $('#sync-carriers').disabled = !trackingConfigured || syncingCarriers;
@@ -60,12 +77,13 @@ function render() {
   const summary = summarizeOrders(allOrders);
   $('#pickup-panel').hidden = queue !== 'tracking'; $('#order-panel').hidden = queue === 'tracking';
   renderPickup();
+  renderPromos();
   for (const key of Object.keys(queues)) $(`#count-${key}`).textContent = key === 'all' ? allOrders.length : key === 'tracking' ? allOrders.filter(order => pickupReadiness(order).state === 'ready').length : summary[key];
   $('#stats').innerHTML = [ ['Active orders', summary.active, 'Awaiting completion', '↗'], ['Payment review', summary.unpaid, 'Active orders with an unpaid balance', '◷'], ['Tracking due', summary.followup, 'Ready for a follow-up', '↗'], ['Confirmed payments', money(summary.collected), 'All loaded orders marked paid', '✓'] ].map(([label, value, hint, icon]) => `<div class="stat-card"><div class="stat-label">${label}<span class="stat-icon" aria-hidden="true">${icon}</span></div><strong>${value}</strong><small>${hint}</small></div>`).join('');
   $('#queue-title').textContent = queues[queue][0]; $('#queue-description').textContent = queues[queue][1];
   document.querySelectorAll('[data-queue]').forEach(button => { const active = button.dataset.queue === queue; button.classList.toggle('active', active); if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
   $('#sync-state').textContent = lastSync ? `Updated ${lastSync.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'Loading orders';
-  const rows = filterOrders(allOrders, { queue, search: $('#search').value, service: $('#service-filter').value, status: $('#status-filter').value, payment: $('#payment-filter').value });
+  const rows = filterOrders(allOrders, { queue, search: $('#search').value, service: $('#service-filter').value, status: $('#status-filter').value, payment: $('#payment-filter').value, promo: $('#promo-filter').value });
   const sort = $('#sort-orders').value;
   const time = order => new Date(order.created_at || 0).getTime() || 0;
   const collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
@@ -74,11 +92,11 @@ function render() {
       : sort === 'room' ? collator.compare(`${a.dorm || ''} ${a.room || ''}`, `${b.dorm || ''} ${b.room || ''}`)
         : sort === 'unpaid' ? Number(b.payment_status === 'unconfirmed' && Number(b.amount_due) > 0) - Number(a.payment_status === 'unconfirmed' && Number(a.amount_due) > 0) || Number(b.amount_due || 0) - Number(a.amount_due || 0) || time(b) - time(a)
           : time(b) - time(a));
-  $('#orders').innerHTML = rows.map(order => `<tr><td data-label="Order / customer"><div class="order-cell"><span class="order-mark" aria-hidden="true">◇</span><div class="order-primary"><button class="order-link" data-open="${esc(order.id)}">${esc(order.recipient_name || 'Customer')}</button><a class="order-phone" href="tel:${esc(order.phone || '')}">${esc(order.phone || 'No phone')}</a><small>#${esc(order.id.slice(0, 8))} · ${esc(date(order.created_at))}</small></div></div></td><td data-label="Destination"><strong>${esc(order.dorm || 'Not provided')}</strong><small>Room ${esc(order.room || '—')}</small></td><td data-label="Service"><strong>${esc(SERVICE_LABELS[order.service] || order.service)}</strong><small>${esc(order.quantity)} ${Number(order.quantity) === 1 ? 'item' : 'items'}${order.service === 'bigdrop' ? ` · ${esc(SERVICE_LABELS[order.base_service] || '')}` : ''}</small></td><td data-label="Payment"><strong>${money(order.amount_due)}</strong><small>${badge(order.payment_status, PAYMENT_LABELS)}</small></td><td data-label="Status">${badge(order.order_status)}${needsFollowup(order) ? '<small class="due-label">Tracking follow-up due</small>' : ''}</td><td data-label="Details"><button class="open-order" data-open="${esc(order.id)}" aria-label="Open order ${esc(order.id.slice(0,8))}">Open <span aria-hidden="true">↗</span></button></td></tr>`).join('');
+  $('#orders').innerHTML = rows.map(order => `<tr><td data-label="Order / customer"><div class="order-cell"><span class="order-mark" aria-hidden="true">◇</span><div class="order-primary"><button class="order-link" data-open="${esc(order.id)}">${esc(order.recipient_name || 'Customer')}</button><a class="order-phone" href="tel:${esc(order.phone || '')}">${esc(order.phone || 'No phone')}</a><small>#${esc(order.id.slice(0, 8))} · ${esc(date(order.created_at))}</small></div></div></td><td data-label="Destination"><strong>${esc(order.dorm || 'Not provided')}</strong><small>Room ${esc(order.room || '—')}</small></td><td data-label="Service"><strong>${esc(SERVICE_LABELS[order.service] || order.service)}</strong><small>${esc(order.quantity)} ${Number(order.quantity) === 1 ? 'item' : 'items'}${order.service === 'bigdrop' ? ` · ${esc(SERVICE_LABELS[order.base_service] || '')}` : ''}</small></td><td data-label="Payment"><strong>${money(order.amount_due)}</strong><small>${badge(order.payment_status, PAYMENT_LABELS)}</small>${order.promo_code ? `<small>Promo: ${esc(order.promo_code)} · ${esc(order.discount_percent ?? 0)}% off</small>` : ''}</td><td data-label="Status">${badge(order.order_status)}${needsFollowup(order) ? '<small class="due-label">Tracking follow-up due</small>' : ''}</td><td data-label="Details"><button class="open-order" data-open="${esc(order.id)}" aria-label="Open order ${esc(order.id.slice(0,8))}">Open <span aria-hidden="true">↗</span></button></td></tr>`).join('');
   $('#empty').hidden = rows.length > 0;
   $('#empty').innerHTML = `<span class="empty-symbol" aria-hidden="true">◇</span><h3>${allOrders.length ? 'Nothing in this view.' : 'Ready for the first drop.'}</h3><p>${allOrders.length ? 'Try another queue or clear your filters to see more orders.' : 'New orders will appear here when customers start checkout.'}</p>`;
   $('#result-count').textContent = `Showing ${rows.length} of ${allOrders.length} orders`;
-  $('#reset-filters').hidden = !($('#search').value || $('#service-filter').value || $('#status-filter').value || $('#payment-filter').value || sort !== 'newest');
+  $('#reset-filters').hidden = !($('#search').value || $('#service-filter').value || $('#status-filter').value || $('#payment-filter').value || $('#promo-filter').value || sort !== 'newest');
 }
 function field(label, value, wide = false) { return `<dl${wide ? ' class="wide"' : ''}><dt>${esc(label)}</dt><dd>${esc(value || 'Not provided')}</dd></dl>`; }
 function options(labels, selected) { return Object.entries(labels).map(([value, label]) => `<option value="${value}"${value === selected ? ' selected' : ''}>${label}</option>`).join(''); }
@@ -165,8 +183,8 @@ setInterval(async () => { if (!document.hidden && !$('#dashboard').hidden && !se
 $('#sync-carriers').onclick = () => syncCarriers(true);
 $('#queue-nav').onclick = event => { const button = event.target.closest('[data-queue]'); if (button) { queue = button.dataset.queue; render(); } };
 $('#search').oninput = render;
-for (const id of ['service-filter', 'status-filter', 'payment-filter', 'sort-orders']) $(`#${id}`).onchange = render;
-$('#reset-filters').onclick = () => { for (const id of ['search', 'service-filter', 'status-filter', 'payment-filter']) $(`#${id}`).value = ''; $('#sort-orders').value = 'newest'; render(); };
+for (const id of ['service-filter', 'status-filter', 'payment-filter', 'promo-filter', 'sort-orders']) $(`#${id}`).onchange = render;
+$('#reset-filters').onclick = () => { for (const id of ['search', 'service-filter', 'status-filter', 'payment-filter', 'promo-filter']) $(`#${id}`).value = ''; $('#sort-orders').value = 'newest'; render(); };
 function openOrder(event) { const button = event.target.closest('[data-open]'); if (!button) return; detailOpener = button; selectedId = button.dataset.open; deleteConfirming = false; renderDetails(); $('#order-dialog').showModal(); }
 $('#orders').onclick = openOrder; $('#pickup-orders').onclick = openOrder;
 $('#close-details').onclick = () => $('#order-dialog').close();
@@ -185,30 +203,22 @@ $('#order-details').onclick = event => { const remove = event.target.closest('[d
 load().then(() => { if (!$('#dashboard').hidden) syncCarriers(true); });
 
 async function verifyPayments() {
-  if (verifyingPayments || !paymentSheetConfigured) return;
+  if (verifyingPayments || loading || !paymentSheetConfigured) return;
   verifyingPayments = true;
   $('#verify-payments').disabled = true;
-  $('#payment-sheet-state').textContent = 'Checking sheet for unique paid matches…';
   try {
-    const response = await fetch('/api/dashboard/payments', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'verify' }),
-    });
-    if (response.status === 401) { showLogin('Your session expired. Please sign in again.'); return; }
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Could not verify payments.');
-    if (result.updated) await load();
-    $('#payment-sheet-state').textContent = `${result.updated} updated · ${result.ambiguous} ambiguous · ${result.unmatched} unmatched · ${result.unpaidRows} not paid`;
-    toast(result.failed
-      ? `${result.updated} entries updated; ${result.failed} could not be saved. Refresh and retry.`
-      : `${result.updated} dashboard entr${result.updated === 1 ? 'y' : 'ies'} updated from the sheet. ${result.ambiguous} ambiguous, ${result.unmatched} unmatched, ${result.unpaidRows} not marked Paid.`);
-    if (selectedId) renderDetails();
-  } catch (error) {
-    $('#payment-sheet-state').textContent = error.message;
-    toast(error.message);
+    await load();
   } finally {
     verifyingPayments = false;
     $('#verify-payments').disabled = !paymentSheetConfigured;
   }
+}
+
+function renderSheetPayments() {
+  const linked = sheetPayments.filter(payment => payment.matchStatus === 'matched').length;
+  $('#sheet-payment-summary').textContent = `${sheetPayments.length} paid payments · ${linked} linked to dashboard orders · ${sheetPayments.length - linked} need order review. Synced ${new Date().toLocaleTimeString()}.`;
+  const labels = { matched: 'Order linked', ambiguous: 'Multiple possible orders', unmatched: 'No matching order', refunded: 'Order refunded', save_failed: 'Order update failed' };
+  $('#sheet-payment-rows').innerHTML = sheetPayments.map(payment => `<tr><td data-label="Customer"><strong>${esc(payment.customer)}</strong><small>${esc(payment.packageName || '')}</small></td><td data-label="Payment"><strong>${payment.amount === null ? 'Amount missing' : money(payment.amount)}</strong><small>${esc(payment.method)} · <span class="badge green">Paid in sheet</span></small></td><td data-label="Order details"><strong>${esc(payment.service)} · ${esc(payment.quantity)} items</strong><small>${esc(payment.dorm)} · Room ${esc(payment.room || '—')}</small><small>${esc(payment.tracking || '')}</small></td><td data-label="Payment time">${esc(payment.paymentTime || 'Not provided')}</td><td data-label="Dashboard link"><span class="badge ${payment.matchStatus === 'matched' ? 'green' : 'gold'}">${esc(labels[payment.matchStatus] || 'Needs review')}</span>${payment.orderId ? `<small>#${esc(payment.orderId.slice(0, 8))}</small>` : ''}</td></tr>`).join('');
 }
 
 function renderPickup() {
@@ -260,3 +270,22 @@ async function syncCarriers(reload) {
   } catch (error) { $('#tracking-message').textContent = error.message; }
   finally { syncingCarriers = false; $('#sync-carriers').disabled = !trackingConfigured; }
 }
+
+function renderPromos() {
+  const usage = summarizePromoUsage(allOrders);
+  const selected = $('#promo-filter').value;
+  $('#promo-filter').innerHTML = '<option value="">All codes / no promo</option>' + usage.map(row => `<option value="${esc(row.code)}">${esc(row.code)}</option>`).join('');
+  if (usage.some(row => row.code === selected)) $('#promo-filter').value = selected;
+  const total = usage.reduce((sum, row) => sum + row.total, 0);
+  $('#promo-summary').textContent = `${total} orders with a promo code · ${usage.length} codes used. Updates when orders refresh.`;
+  $('#promo-rows').innerHTML = usage.length ? usage.map(row => `<tr><td data-label="Code"><strong>${esc(row.code)}</strong></td>${[['total','Orders'],['paid','Paid'],['free','Free'],['awaiting','Awaiting payment'],['cancelled','Cancelled'],['refunded','Refunded']].map(([key, label]) => `<td data-label="${label}">${row[key]}</td>`).join('')}<td data-label="Details"><button class="text-button" data-promo="${esc(row.code)}" aria-label="View orders using ${esc(row.code)}">View orders ↗</button></td></tr>`).join('') : '<tr><td colspan="8">No promo codes recorded on these orders yet.</td></tr>';
+}
+$('#promo-rows').onclick = event => {
+  const button = event.target.closest('[data-promo]');
+  if (!button) return;
+  queue = 'all';
+  for (const id of ['search', 'service-filter', 'status-filter', 'payment-filter']) $(`#${id}`).value = '';
+  $('#promo-filter').value = button.dataset.promo;
+  render();
+  $('#order-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+};

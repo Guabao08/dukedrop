@@ -1,0 +1,9 @@
+.payment-ledger { margin-bottom: 24px; }
+.payment-ledger > summary { padding: 20px 24px; font-size: 19px; font-weight: 800; cursor: pointer; color: var(--navy); }
+.payment-ledger > p { margin: 0 24px 14px; }
+.payment-ledger td { white-space: normal; overflow-wrap: anywhere; }
+.payment-ledger .badge { white-space: normal; }
+@media (max-width: 600px) {
+  .payment-ledger tr td:last-child { position: static; grid-column: 1 / -1; }
+  .payment-ledger tr td:first-child { padding-right: 0; }
+}

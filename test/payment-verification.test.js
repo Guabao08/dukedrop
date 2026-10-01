@@ -13,11 +13,11 @@ const match = (rows, orders = [order]) => findPaymentMatches(orders, [headers, .
 test('paid sheet rows update payment status and supplied order details', () => {
   const result = match([row]);
   assert.equal(result.updates.length, 1);
-  assert.deepEqual(result.updates[0], { id: order.id, updates: {
+  assert.deepEqual({ ...order, ...result.updates[0].updates }, { ...order,
     amount_due: 4.99, service: 'express', quantity: 1, dorm: 'Few Quad', room: 'Room 210',
     payment_method: 'venmo', payment_status: 'paid', payment_time: '2026-10-01', email_id: 'receipt-1', package_name: 'Test Package',
     recipient_name: 'Test Customer', carrier: 'UPS', tracking: 'TRACK123', source: 'locker', locker_location: 'Campus', locker_code: '123456',
-  } });
+  });
 });
 
 test('reordered columns and extra columns preserve field mapping', () => {
@@ -25,6 +25,23 @@ test('reordered columns and extra columns preserve field mapping', () => {
   assert.equal(paymentSheetHeaders(values), true);
   assert.deepEqual(findPaymentMatches([order], values).updates, match([row]).updates);
   assert.equal(paymentSheetHeaders([['Amount', 'Amount']]), false);
+});
+
+test('all paid rows remain visible even when no dashboard order matches', () => {
+  const result = match([row], []);
+  assert.equal(result.sheetPayments.length, 1);
+  assert.equal(result.sheetPayments[0].customer, 'Test Customer');
+  assert.equal(result.sheetPayments[0].matchStatus, 'unmatched');
+  assert.equal(result.sheetPayments[0].orderId, null);
+});
+
+test('repeat verification retains the paid ledger without rewriting unchanged orders', () => {
+  const first = match([row]);
+  const updated = { ...order, ...first.updates[0].updates };
+  const second = match([row], [updated]);
+  assert.equal(second.updates.length, 0);
+  assert.equal(second.sheetPayments[0].matchStatus, 'matched');
+  assert.equal(second.sheetPayments[0].orderId, order.id);
 });
 
 test('an unpaid copy cannot block a paid match; exact duplicates count once', () => {

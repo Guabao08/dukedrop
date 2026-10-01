@@ -12,7 +12,7 @@ function headers() {
 async function loadOrders() {
   const base = `${process.env.SUPABASE_URL}/rest/v1/orders`;
   const url = new URL(base);
-  url.searchParams.set('select', 'id,service,base_service,quantity,dorm,room,carrier,tracking,amount_due,payment_method,payment_status,recipient_name,email_id');
+  url.searchParams.set('select', '*');
   url.searchParams.set('order', 'created_at.asc,id.asc');
   const orders = [];
   for (let offset = 0; ; offset += 500) {
@@ -88,6 +88,9 @@ export default async function handler(req, res) {
       unpaidRows: matches.unpaidRows,
       unmatched: matches.unmatched,
       updatedIds: synced.updatedIds,
+      sheetPayments: matches.sheetPayments.map(payment => ({ ...payment,
+        matchStatus: payment.matchStatus === 'matched' && matches.updates.some(update => update.id === payment.orderId) && !synced.updatedIds.includes(payment.orderId) ? 'save_failed' : payment.matchStatus,
+      })),
     });
   } catch (error) {
     return res.status(502).json({ error: error.message === 'Payment sheet access is not configured.' ? error.message : 'Payment verification could not finish. Check the sheet connection and try again.' });

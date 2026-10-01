@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { filterOrders, summarizeOrders, needsFollowup } from '../dashboard/order-model.js';
+import { filterOrders, summarizeOrders, needsFollowup, summarizePromoUsage } from '../dashboard/order-model.js';
 const now = Date.parse('2026-09-29T12:00:00Z');
 const base = { id: 'one', order_status: 'received', payment_status: 'unconfirmed', amount_due: 5, service: 'express', dorm: 'Pegram', room: '210', tracking_followup_status: 'pending', tracking_followup_due_at: '2026-09-28T12:00:00Z' };
 test('operational queues exclude closed orders and zero-dollar payment review', () => {
@@ -14,4 +14,23 @@ test('search and filters combine, including Big Drop base service', () => {
   const orders = [base, { ...base, id: 'two', service: 'bigdrop', base_service: 'pickup', dorm: 'Craven House D', payment_status: 'paid', tracking: 'TRACK123' }];
   assert.deepEqual(filterOrders(orders, { search: ' track123 ', service: 'pickup', payment: 'paid' }, now).map(o => o.id), ['two']);
   assert.equal(filterOrders(orders, { search: 'Pegram', status: 'completed' }, now).length, 0);
+});
+
+test('promo usage normalizes codes and separates payment outcomes', () => {
+  const orders = [
+    { ...base, promo_code: ' austin20 ', payment_status: 'paid' },
+    { ...base, promo_code: 'AUSTIN20' },
+    { ...base, promo_code: 'AUSTIN20', order_status: 'cancelled', payment_status: 'paid' },
+    { ...base, promo_code: 'AUSTIN20', payment_status: 'refunded' },
+    { ...base, promo_code: 'FREEDROP', amount_due: 0, payment_status: 'paid' },
+    { ...base, promo_code: 'FREEDROP', amount_due: 0 },
+    base, { ...base, promo_code: '   ' },
+  ];
+  assert.deepEqual(summarizePromoUsage(orders), [
+    { code: 'AUSTIN20', total: 4, paid: 1, free: 0, awaiting: 1, cancelled: 1, refunded: 1 },
+    { code: 'FREEDROP', total: 2, paid: 0, free: 2, awaiting: 0, cancelled: 0, refunded: 0 },
+  ]);
+  assert.equal(filterOrders(orders, { promo: 'austin20', payment: 'paid' }).length, 2);
+  assert.equal(filterOrders(orders, { promo: 'AUSTIN' }).length, 0);
+  assert.deepEqual(summarizePromoUsage([]), []);
 });
