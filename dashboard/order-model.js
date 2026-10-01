@@ -38,3 +38,26 @@ export function summarizePromoUsage(orders) {
   }
   return [...groups.values()].sort((a, b) => b.total - a.total || a.code.localeCompare(b.code));
 }
+
+const phoneKey = value => {
+  let digits = String(value || '').replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1);
+  return digits.length >= 10 ? digits : '';
+};
+const normalized = value => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+// Flags later submissions only when the customer and core order details match.
+export function findRepeatOrders(orders, windowMs = 10 * 60 * 1000) {
+  const candidates = orders.map(order => ({ order, time: Date.parse(order.created_at) }))
+    .filter(({ order, time }) => phoneKey(order.phone) && Number.isFinite(time))
+    .sort((a, b) => a.time - b.time);
+  const previousByKey = new Map();
+  const repeats = [];
+  for (const { order, time } of candidates) {
+    const key = [phoneKey(order.phone), normalized(order.service), normalized(order.base_service || order.service), Number(order.quantity), normalized(order.dorm), normalized(order.room)].join('|');
+    const previous = previousByKey.get(key);
+    if (previous && time - previous.time <= windowMs) repeats.push({ repeatId: order.id, originalId: previous.order.id });
+    else previousByKey.set(key, { order, time });
+  }
+  return repeats;
+}

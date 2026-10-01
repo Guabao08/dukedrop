@@ -69,6 +69,14 @@ test('strong identity matches copy the paid ledger amount and payment method', (
   assert.equal(match([corrected], [{ ...order, tracking: '', recipient_name: 'Test Customer' }]).updates.length, 1);
 });
 
+test('a conflicting customer name needs exact tracking before a payment can match', () => {
+  const conflict = [...row]; conflict[1] = 'Different Customer'; conflict[8] = '';
+  const namedOrder = { ...order, tracking: '', recipient_name: 'Test Customer' };
+  assert.equal(match([conflict], [namedOrder]).updates.length, 0);
+  conflict[8] = 'TRACK123';
+  assert.equal(match([conflict], [{ ...namedOrder, tracking: 'TRACK123' }]).updates.length, 1);
+});
+
 test('a one-cent round-up matches, but arbitrary amount differences need identity', () => {
   const rounded = [...row]; rounded[2] = '$5.00'; rounded[8] = '';
   assert.equal(match([rounded], [{ ...order, tracking: '' }]).updates.length, 1);

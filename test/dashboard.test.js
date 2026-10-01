@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { filterOrders, summarizeOrders, needsFollowup, summarizePromoUsage } from '../dashboard/order-model.js';
+import { filterOrders, summarizeOrders, needsFollowup, summarizePromoUsage, findRepeatOrders } from '../dashboard/order-model.js';
 const now = Date.parse('2026-09-29T12:00:00Z');
 const base = { id: 'one', order_status: 'received', payment_status: 'unconfirmed', amount_due: 5, service: 'express', dorm: 'Pegram', room: '210', tracking_followup_status: 'pending', tracking_followup_due_at: '2026-09-28T12:00:00Z' };
 test('operational queues exclude closed orders and zero-dollar payment review', () => {
@@ -33,4 +33,13 @@ test('promo usage normalizes codes and separates payment outcomes', () => {
   assert.equal(filterOrders(orders, { promo: 'austin20', payment: 'paid' }).length, 2);
   assert.equal(filterOrders(orders, { promo: 'AUSTIN' }).length, 0);
   assert.deepEqual(summarizePromoUsage([]), []);
+});
+
+test('repeat detection requires matching customer and order details within ten minutes', () => {
+  const first = { ...base, id: 'first', phone: '(919) 555-0123', created_at: '2026-09-29T12:00:00Z' };
+  const repeat = { ...first, id: 'repeat', phone: '+1 919-555-0123', created_at: '2026-09-29T12:09:00Z' };
+  const differentRoom = { ...repeat, id: 'room', room: '211' };
+  const tooLate = { ...repeat, id: 'late', created_at: '2026-09-29T12:11:00Z' };
+  const noPhone = { ...repeat, id: 'no-phone', phone: '' };
+  assert.deepEqual(findRepeatOrders([tooLate, noPhone, repeat, differentRoom, first]), [{ repeatId: 'repeat', originalId: 'first' }]);
 });
