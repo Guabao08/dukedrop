@@ -258,7 +258,7 @@ if (typeof document !== 'undefined') {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   const makeServiceState = (service) => ({
-    qty: 1, dorm: '', room: '', carrier: '', tracking: '', payMethod: 'venmo', paymentBusy: false,
+    qty: 1, dorm: '', room: '', carrier: '', tracking: '', payMethod: 'venmo', paymentBusy: false, saveError: '',
     stripeClientSecret: '', stripeError: '', stripeFreeOrder: false,
     ...(service === 'pickup' || service === 'bigdrop' ? { source: 'mailbox', mailroom: '', box: '', lockerLocation: '', locker: '', name: '' } : {}),
     size: 'standard',
@@ -478,6 +478,7 @@ if (typeof document !== 'undefined') {
           <button type="button" class="tab${s.payMethod === 'card' ? ' active' : ''}" data-action="paymethod" data-method="card">Card</button>
         </div>
         <div data-role="payment-panel">${paymentPanelHtml(key, vm)}</div>
+        ${s.saveError ? `<p class="missing" data-role="save-error" role="alert">${esc(s.saveError)}</p>` : ''}
         ${!vm.ready ? `<div class="missing" data-role="missing">Still need: ${esc(vm.missing.join(', '))}.</div>` : ''}
       </div>`;
   }
@@ -684,9 +685,14 @@ if (typeof document !== 'undefined') {
     }
     if (action === 'pay-zelle') {
       const vm = buildVM(key);
-      if (!vm.ready) return;
+      if (!vm.ready || state[key].paymentBusy) return;
       const request = vm.requests[(Number(el.dataset.request) || 1) - 1];
-      if (!await saveOrder(key)) return;
+      state[key].paymentBusy = true;
+      render();
+      const saved = await saveOrder(key);
+      state[key].paymentBusy = false;
+      render();
+      if (!saved) return;
       copy(request ? zelleLine(order(key), request) : vm.zelleLine, () => {
         state.zelleFallback[key] = true;
         render();
@@ -696,6 +702,7 @@ if (typeof document !== 'undefined') {
   });
 
   async function saveOrder(key, orderSnapshot = { ...order(key) }) {
+    state[key].saveError = '';
     try {
       const configResponse = await fetch('/api/config');
       if (configResponse.status === 404 && ['localhost', '127.0.0.1'].includes(location.hostname)) {
@@ -719,10 +726,7 @@ if (typeof document !== 'undefined') {
       state[key].saved = true;
       return true;
     } catch {
-      const card = app.querySelector('.card');
-      let notice = card?.querySelector('[data-role="save-error"]');
-      if (!notice && card) { notice = document.createElement('p'); notice.className = 'missing'; notice.dataset.role = 'save-error'; card.appendChild(notice); }
-      if (notice) notice.textContent = 'We could not save your order. Please contact DukeDrop before paying.';
+      state[key].saveError = 'We could not save your order. Please contact DukeDrop before paying.';
       return false;
     }
   }

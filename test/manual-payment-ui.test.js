@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+test('manual checkout keeps save errors visible and prevents concurrent Zelle orders', async t => {
+  const originals = Object.fromEntries(['document', 'window', 'fetch', 'sessionStorage', 'navigator'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  t.after(() => { for (const [key, descriptor] of Object.entries(originals)) descriptor ? Object.defineProperty(globalThis, key, descriptor) : delete globalThis[key]; });
+  const listeners = {};
+  const app = { innerHTML: '', addEventListener(type, handler) { listeners[type] = handler; }, querySelectorAll: () => [], querySelector: () => null };
+  globalThis.document = { getElementById: () => app, querySelector: () => null };
+  globalThis.window = {};
+  globalThis.sessionStorage = { getItem: () => null };
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { clipboard: { writeText: async () => {} } } });
+  let posts = 0; let fail = true; let release;
+  globalThis.fetch = async url => {
+    if (url === '/api/config') return { ok: true, json: async () => ({ orderStorageEnabled: true }) };
+    posts++;
+    if (fail) throw new Error('Offline');
+    await new Promise(resolve => { release = resolve; });
+    return { ok: true, json: async () => ({ id: 'saved-order' }) };
+  };
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  const click = (action, extra = {}) => listeners.click({ target: { closest: () => ({ dataset: { action, ...extra } }) } });
+  await import(`../app.js?manual-ui=${Date.now()}`);
+  await settle();
+  for (const [field, value] of Object.entries({ dorm: 'Pegram', room: '210', phone: '9195550187' })) listeners.input({ target: { dataset: { field }, value } });
+  await click('pay-venmo');
+  assert.match(app.innerHTML, /We could not save your order/);
+  assert.doesNotMatch(app.innerHTML, /Open Venmo app/);
+  fail = false;
+  await click('paymethod', { method: 'zelle' });
+  const first = click('pay-zelle');
+  const second = click('pay-zelle');
+  await settle();
+  assert.equal(posts, 2, 'one failed Venmo attempt and one Zelle request');
+  release();
+  await Promise.all([first, second]);
+  await settle();
+  assert.doesNotMatch(app.innerHTML, /We could not save your order/);
+  await click('pay-zelle');
+  assert.equal(posts, 2, 'copying again reuses the saved order');
+});
