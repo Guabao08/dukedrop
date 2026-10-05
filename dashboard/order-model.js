@@ -1,7 +1,7 @@
 const promoCode = order => String(order.promo_code || '').trim().toUpperCase();
 export const ORDER_LABELS = { payment_started: 'Payment started', received: 'Received', in_progress: 'In progress', completed: 'Completed', cancelled: 'Cancelled' };
 export const PAYMENT_LABELS = { unconfirmed: 'Unconfirmed', paid: 'Paid', refunded: 'Refunded' };
-export const FOLLOWUP_LABELS = { not_needed: 'Not needed', pending: 'Awaiting tracking', sent: 'Follow-up sent', received: 'Tracking received', skipped: 'Skipped' };
+export const FOLLOWUP_LABELS = { not_needed: 'Not scheduled', pending: 'Scheduled', sent: 'Text sent', received: 'Customer replied', skipped: 'Skipped' };
 export const SERVICE_LABELS = { express: 'Express', pickup: 'Pickup', returns: 'Returns', bigdrop: 'Big Drop' };
 export const isActive = order => !['completed', 'cancelled'].includes(order.order_status);
 export const needsPayment = order => isActive(order) && order.payment_status === 'unconfirmed' && Number(order.amount_due) > 0;
@@ -42,6 +42,27 @@ export function arrivalMetrics(orders, now = Date.now()) {
     arrivingSoon: upcoming.filter(row => Date.parse(row.estimated_delivery_at) < now + 48 * 3600000).length,
     exceptions: shipments.filter(row => row.sync_error || ['failure', 'error', 'return_to_sender'].includes(row.status)).length,
     missingTracking: active.filter(order => order.service !== 'returns' && !(order.service === 'bigdrop' && order.base_service === 'returns') && !(order.order_trackers || []).length).length };
+}
+
+export function arrivalSchedule(orders, now = new Date(), days = 14) {
+  const tz = 'America/New_York';
+  const key = value => new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(value);
+  const start = key(now);
+  const end = key(new Date(now.getTime() + days * 86400000));
+  const rows = [];
+  for (const order of orders) {
+    if (!isActive(order) || order.service === 'returns' || (order.service === 'bigdrop' && order.base_service === 'returns')) continue;
+    const trackers = (order.order_trackers || []).filter(row => Number.isFinite(Date.parse(row.estimated_delivery_at)) && !['delivered', 'cancelled', 'return_to_sender'].includes(row.status));
+    if (trackers.length) {
+      for (const tracker of trackers) {
+        const day = key(new Date(tracker.estimated_delivery_at));
+        if (day >= start && day < end) rows.push({ day, order, source: 'Carrier estimate', tracker });
+      }
+    } else if (order.estimated_delivery_date && order.estimated_delivery_date >= start && order.estimated_delivery_date < end) {
+      rows.push({ day: order.estimated_delivery_date, order, source: 'Customer estimate', tracker: null });
+    }
+  }
+  return rows.sort((a, b) => a.day.localeCompare(b.day) || a.order.id.localeCompare(b.order.id));
 }
 
 export function creatorMetrics(orders) {

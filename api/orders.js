@@ -27,6 +27,8 @@ export default async function handler(req, res) {
   const row = {
     service: o.service, base_service: o.baseService || o.service, order_size: o.orderSize || (o.service === 'bigdrop' ? 'bigdrop' : 'standard'), quantity: o.quantity, dorm: String(o.dorm).trim(), room: String(o.room).trim(),
     phone: String(o.phone).trim(), carrier: o.carrier || null, tracking: o.baseService === 'returns' || o.service === 'returns' ? null : String(o.tracking).trim(),
+    retailer: o.retailer === 'amazon' ? 'amazon' : 'other',
+    sms_opt_in: o.smsOptIn === true,
     source: o.source || null, mailroom: o.mailroom || null, box_number: o.box || null,
     locker_location: o.lockerLocation || null, locker_code: o.locker || null, recipient_name: o.name || null,
     fulfillment_mode: o.mode || null, promo_code: String(o.promoCode || '').trim().toUpperCase() || null,

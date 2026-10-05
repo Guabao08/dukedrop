@@ -33,7 +33,7 @@ test('staff can sign in and load orders when analytics packages are unavailable'
       requests++;
       assert.equal(url.origin, 'https://storage.example');
       assert.equal(url.pathname, '/rest/v1/orders');
-      assert.equal(url.searchParams.get('select'), '*,order_trackers(*)');
+      assert.equal(url.searchParams.get('select'), '*,order_trackers(*),order_sms_messages(*)');
       assert.equal(options.headers.apikey, 'test-service-key');
       return { ok: true, json: async () => [{ id: 'test-order', order_trackers: [] }] };
     };

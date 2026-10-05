@@ -21,7 +21,7 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
       const url = new URL(base);
-      url.searchParams.set('select', '*,order_trackers(*)');
+      url.searchParams.set('select', '*,order_trackers(*),order_sms_messages(*)');
       const orders = [];
       url.searchParams.set('order', 'created_at.desc,id.desc');
       for (let offset = 0; ; offset += 500) {
@@ -65,6 +65,9 @@ export default async function handler(req, res) {
       if (field === 'payment_status') return !PAYMENT_STATUSES.has(value);
       if (field === 'tracking_followup_status') return !FOLLOWUP_STATUSES.has(value);
       if (field === 'tracking_followup_sent_at') return typeof value !== 'string' || Number.isNaN(Date.parse(value));
+      if (field === 'retailer') return !['other', 'amazon'].includes(value);
+      if (field === 'estimated_delivery_date') return value !== null && (typeof value !== 'string' || !/^20\d{2}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`)));
+      if (field === 'shipping_link') return value !== null && (typeof value !== 'string' || value.length > 2000 || (value && !/^https:\/\//i.test(value)));
       return true;
     })) return res.status(400).json({ error: 'Invalid order update.' });
 

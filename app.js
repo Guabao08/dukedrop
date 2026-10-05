@@ -258,7 +258,7 @@ if (typeof document !== 'undefined') {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   const makeServiceState = (service) => ({
-    qty: 1, dorm: '', room: '', carrier: '', tracking: '', payMethod: 'venmo', paymentBusy: false, saveError: '',
+    qty: 1, dorm: '', room: '', carrier: '', tracking: '', retailer: 'other', smsOptIn: false, payMethod: 'venmo', paymentBusy: false, saveError: '',
     stripeClientSecret: '', stripeError: '', stripeFreeOrder: false,
     ...(service === 'pickup' || service === 'bigdrop' ? { source: 'mailbox', mailroom: '', box: '', lockerLocation: '', locker: '', name: '' } : {}),
     size: 'standard',
@@ -284,7 +284,7 @@ if (typeof document !== 'undefined') {
     if (s.savedOrder) return s.savedOrder;
     const service = s.size === 'bigdrop' ? 'bigdrop' : key;
     const promoCode = isPromoEligible(state.promoCode, s) ? state.promoCode : '';
-    return { service, baseService: key, orderSize: s.size, quantity: s.qty, dorm: s.dorm, room: s.room, phone: s.phone || '', carrier: s.carrier, tracking: s.tracking, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name, mode: s.mode, promoCode, payMethod: s.payMethod };
+    return { service, baseService: key, orderSize: s.size, quantity: s.qty, dorm: s.dorm, room: s.room, phone: s.phone || '', carrier: s.carrier, tracking: s.tracking, retailer: s.retailer, smsOptIn: s.smsOptIn, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name, mode: s.mode, promoCode, payMethod: s.payMethod };
   }
 
   function buildVM(key) {
@@ -452,7 +452,8 @@ if (typeof document !== 'undefined') {
         </div>
         <label>Phone number<input type="tel" inputmode="tel" autocomplete="tel" placeholder="e.g. (919) 555-0123" value="${esc(s.phone || '')}" data-field="phone" required></label>
         ${sourceToggleHtml(key)}
-        ${key !== 'returns' ? `<div class="tracking-fields"><label>Carrier (if known)<input type="text" placeholder="e.g. UPS, USPS, FedEx, DHL" value="${esc(s.carrier)}" data-field="carrier"></label><label>Tracking/order numbers (if available)<span class="field-hint">If you don't have it yet, we'll follow up in 24 hours.</span><textarea rows="3" placeholder="Enter tracking/order number if available" data-field="tracking"></textarea></label></div>` : ''}
+        ${key !== 'returns' ? `<div class="tracking-fields"><label>Ordered from<select data-field="retailer"><option value="other"${s.retailer === 'other' ? ' selected' : ''}>Another store</option><option value="amazon"${s.retailer === 'amazon' ? ' selected' : ''}>Amazon</option></select></label><label>Carrier (if known)<input type="text" placeholder="e.g. UPS, USPS, FedEx, DHL" value="${esc(s.carrier)}" data-field="carrier"></label><label>Tracking/order numbers (if available)<span class="field-hint">If you opt in below, we’ll text 24–48 hours after payment to confirm shipping details and estimated delivery.</span><textarea rows="3" placeholder="Enter tracking/order number if available" data-field="tracking"></textarea></label></div>` : ''}
+        ${key !== 'returns' ? `<label class="sms-opt-in"><input type="checkbox" data-field="smsOptIn" ${s.smsOptIn ? 'checked' : ''}> DukeDrop may text me once after payment to request shipping details and an estimated delivery date. Message and data rates may apply. Reply STOP to opt out or HELP for help.</label>` : ''}
         ${consentHtml(key, vm)}
         <label>Promo code (optional)
           <input type="text" placeholder="Enter promo code" value="${esc(state.promoCode)}" data-field="promoCode" maxlength="64" autocapitalize="characters" autocorrect="off" spellcheck="false" aria-describedby="promo-code-hint">
@@ -747,7 +748,7 @@ if (typeof document !== 'undefined') {
     if (field === 'promoCode') { state.promoCode = e.target.value; updateDerived(); return; }
     const key = state.active;
     if (field === 'qty') { setQty(key, e.target.value); updateDerived(); return; }
-    setField(key, field, e.target.value);
+    setField(key, field, e.target.type === 'checkbox' ? e.target.checked : e.target.value);
     updateDerived();
   });
 

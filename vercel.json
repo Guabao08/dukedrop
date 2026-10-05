@@ -12,6 +12,9 @@
     },
     "api/dashboard/payments.js": {
       "maxDuration": 60
+    },
+    "api/sms/*.js": {
+      "maxDuration": 60
     }
   },
   "buildCommand": "npm run build",
@@ -20,6 +23,14 @@
     {
       "path": "/api/tracking/reconcile",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/sms/reconcile",
+      "schedule": "0 16 * * *"
+    },
+    {
+      "path": "/api/sms/reconcile-evening",
+      "schedule": "0 22 * * *"
     }
   ]
 }

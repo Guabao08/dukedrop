@@ -4,14 +4,14 @@ Mobile-friendly order form with Express, Pickup, and Returns service options, ea
 
 ## Supabase setup
 
-The connected Supabase project (`cyisyclzzjkupsludvqk`) has the SQL in `supabase/schema.sql`, `supabase/tracking-followup.sql`, `supabase/pickup-readiness.sql`, `supabase/carrier-tracking.sql`, and `supabase/tracking-subscriptions.sql` applied. The schema enables RLS. The dashboard uses a shared password checked by server-side API routes; it does not require Supabase Auth accounts.
+The connected Supabase project (`cyisyclzzjkupsludvqk`) has the SQL in `supabase/schema.sql`, `supabase/tracking-followup.sql`, `supabase/pickup-readiness.sql`, `supabase/carrier-tracking.sql`, and `supabase/tracking-subscriptions.sql` applied. Apply `supabase/sms-followup.sql` before deploying the SMS code. The schema enables RLS. The dashboard uses a shared password checked by server-side API routes; it does not require Supabase Auth accounts.
 
 To finish connecting production:
 
 1. Set Vercel environment variables `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ORDER_STORAGE_ENABLED=true`, and `DASHBOARD_PASSWORD`. Store the service role key and dashboard password as sensitive server-side values. They must never be sent to frontend code. Order storage becomes active only when the toggle and server credentials are present.
 2. Deploy. The internal dashboard is at `/dashboard/`. A successful password check creates an eight-hour signed, HttpOnly session cookie; the API uses the service role key only after validating that session.
 
-For a new project or a reset, run `supabase/schema.sql` first and `supabase/tracking-followup.sql` second, then `supabase/pickup-readiness.sql`, `supabase/carrier-tracking.sql`, and `supabase/tracking-subscriptions.sql` in the Supabase SQL Editor. The public order API validates fields and recomputes amounts from server-side pricing and promo rules. The service role key remains server-only.
+For a new project or a reset, run `supabase/schema.sql` first and `supabase/tracking-followup.sql` second, then `supabase/pickup-readiness.sql`, `supabase/carrier-tracking.sql`, `supabase/tracking-subscriptions.sql`, and `supabase/sms-followup.sql` in the Supabase SQL Editor. The public order API validates fields and recomputes amounts from server-side pricing and promo rules. The service role key remains server-only.
 
 ## Operations dashboard
 
@@ -35,7 +35,11 @@ The dashboard's **Verify payments** action reads the public CSV view of the conf
 
 ## Tracking follow-up funnel
 
-After Supabase is configured and order storage is enabled, orders without tracking can be queued with a due time 24 hours after checkout. The dashboard can show that queue and offer a prefilled SMS link for staff to send manually. This repository does not send unattended SMS automatically. Before enabling a scheduled Twilio (or other SMS provider) sender, configure the SMS provider and approved messaging/consent language, then add its credentials as server-only environment variables and schedule a sender to select due `pending` rows and mark sent attempts. Never expose provider credentials in the frontend.
+Customers may opt in to one shipping follow-up text on the order form. When staff confirm payment (manually or through sheet reconciliation), the database schedules the text 24 hours later for opted-in, non-return orders. Two daily Vercel crons send due messages through Twilio around midday and early evening in Duke's time zone; including Vercel Hobby's hourly timing window, this is approximately 24–43 hours after confirmation. Amazon orders request a shipping/tracking link; other orders request a tracking number. Both request an estimated delivery date in `YYYY-MM-DD` format. The order reference in each text helps match replies. Twilio replies appear in order details; an ISO date and Amazon HTTPS link are also saved as structured fields. Staff can enter or correct the date/link and add a carrier tracking number. The Tracking page groups carrier and customer estimates by weekday for the next 14 days.
+
+To activate SMS after applying `supabase/sms-followup.sql`, set server-only Vercel variables `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` (E.164), and `TWILIO_WEBHOOK_URL` (the exact public `https://…/api/sms/inbound` URL). Keep `CRON_SECRET` configured. Set the Twilio phone number's incoming-message webhook to that URL with HTTP POST, then redeploy and verify a real opt-in test order and reply. Historical pending rows are cleared by the migration to prevent surprise sends. The sender claims each order before contacting Twilio and never automatically retries a send whose outcome is uncertain; staff can review it in order details. Twilio credentials never reach the browser.
+
+See [Twilio setup](docs/twilio-setup.md) for the Console, registration, environment-variable, deployment, and test sequence.
 
 ## Run and deploy
 

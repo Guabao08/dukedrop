@@ -152,3 +152,6 @@ button,a,input,textarea,summary{touch-action:manipulation}
 .field-grid>label{min-width:0}
 @media(max-width:520px){.field-grid{grid-template-columns:minmax(0,1fr)}}
 .venmo-profile-link{display:flex;align-items:center;justify-content:center;text-decoration:none!important}
+.tracking-fields select{display:block;width:100%;margin-top:7px;padding:11px 13px;border:1.5px solid var(--border);border-radius:13px;font:15px var(--sans);background:var(--card);color:var(--ink)}
+.sms-opt-in{display:flex;align-items:flex-start;gap:10px;font:12px/1.5 var(--sans);text-transform:none;letter-spacing:0;color:var(--ink)}
+.sms-opt-in input{width:18px;height:18px;flex:none;margin:1px 0 0;padding:0}
