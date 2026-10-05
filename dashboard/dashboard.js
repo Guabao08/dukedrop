@@ -1,15 +1,16 @@
 import { pickupReadiness, pickupLocation, READINESS_LABELS } from './readiness.js';
-import { ORDER_LABELS, PAYMENT_LABELS, FOLLOWUP_LABELS, SERVICE_LABELS, needsFollowup, filterOrders, summarizeOrders, summarizePromoUsage, findRepeatOrders } from './order-model.js';
+import { ORDER_LABELS, PAYMENT_LABELS, FOLLOWUP_LABELS, SERVICE_LABELS, needsFollowup, filterOrders, summarizeOrders, creatorMetrics, revenueMetrics, arrivalMetrics, findRepeatOrders } from './order-model.js';
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const money = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value || 0));
 const date = (value, full = false) => value && !Number.isNaN(new Date(value).getTime()) ? new Date(value).toLocaleString('en-US', full ? { dateStyle: 'medium', timeStyle: 'short' } : { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Not provided';
-const queues = { tracking: ['Pickup readiness', 'Track all orders through collection.'], all: ['All orders', 'Your orders, newest first.'], repeats: ['Likely repeat orders', 'Same phone, service, quantity, dorm, and room within 10 minutes. Review before removing.'], active: ['Active deliveries', 'Orders still moving through your team’s workflow.'], unpaid: ['Payment review', 'Active orders with a balance awaiting payment confirmation.'], followup: ['Tracking follow-ups', 'Active orders whose tracking follow-up is due now.'], completed: ['Completed deliveries', 'The drops your team has finished.'] };
+const queues = { overview: ['Operations overview', 'Revenue, arrivals, and the next steps for your team.'], tracking: ['Package tracking', 'See when shipments are expected and what is ready to collect.'], all: ['Orders', 'Order history, newest first.'], creators: ['Creator performance', 'Promo usage and confirmed revenue by code.'], payments: ['Payment sheet', 'Paid sheet entries and orders needing review.'], repeats: ['Likely repeat orders', 'Same phone, service, quantity, dorm, and room within 10 minutes. Review before removing.'], active: ['Active deliveries', 'Orders still moving through your team’s workflow.'], unpaid: ['Unpaid orders', 'Active orders with a balance awaiting payment confirmation.'], followup: ['Tracking follow-ups', 'Active orders whose tracking follow-up is due now.'], completed: ['Completed deliveries', 'The drops your team has finished.'] };
 let trackingConfigured = false, syncingCarriers = false, paymentSheetConfigured = false, verifyingPayments = false;
 let sheetPayments = [];
-let allOrders = [], queue = 'all', selectedId = null, loading = false, saving = false, deleteConfirming = false, toastTimer, lastSync = null, detailOpener = null;
+let allOrders = [], queue = queues[location.hash.slice(1)] ? location.hash.slice(1) : 'overview', selectedId = null, loading = false, saving = false, deleteConfirming = false, toastTimer, lastSync = null, detailOpener = null;
 $('#today').textContent = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric' });
 function notice(message = '') { $('#message').textContent = message; $('#message').hidden = !message; }
+function navigate(view) { if (!queues[view]) return; queue = view; history.pushState(null, '', `#${view}`); render(); }
 function toast(message) { clearTimeout(toastTimer); $('#toast').textContent = message; $('#toast').hidden = false; toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 4500); }
 async function responseError(response, fallback) {
   const body = await response.text();
@@ -75,13 +76,22 @@ function badge(value, labels = ORDER_LABELS) {
 }
 function render() {
   const summary = summarizeOrders(allOrders);
+  const revenue = revenueMetrics(allOrders);
+  const arrivals = arrivalMetrics(allOrders);
   const repeats = findRepeatOrders(allOrders);
   const repeatIds = new Set(repeats.map(row => row.repeatId));
-  $('#pickup-panel').hidden = queue !== 'tracking'; $('#order-panel').hidden = queue === 'tracking';
+  $('#overview-panel').hidden = queue !== 'overview';
+  $('#pickup-panel').hidden = queue !== 'tracking';
+  $('#creators-panel').hidden = queue !== 'creators';
+  $('#payments-panel').hidden = queue !== 'payments';
+  $('#order-panel').hidden = !['all', 'repeats', 'active', 'unpaid', 'followup', 'completed'].includes(queue);
   renderPickup();
   renderPromos();
-  for (const key of Object.keys(queues)) $(`#count-${key}`).textContent = key === 'all' ? allOrders.length : key === 'tracking' ? allOrders.filter(order => pickupReadiness(order).state === 'ready').length : key === 'repeats' ? repeats.length : summary[key];
-  $('#stats').innerHTML = [ ['Active orders', summary.active, 'Awaiting completion', '↗'], ['Payment review', summary.unpaid, 'Active orders with an unpaid balance', '◷'], ['Tracking due', summary.followup, 'Ready for a follow-up', '↗'], ['Confirmed payments', money(summary.collected), 'All loaded orders marked paid', '✓'] ].map(([label, value, hint, icon]) => `<div class="stat-card"><div class="stat-label">${label}<span class="stat-icon" aria-hidden="true">${icon}</span></div><strong>${value}</strong><small>${hint}</small></div>`).join('');
+  for (const key of ['all', 'tracking', 'repeats', 'active', 'unpaid', 'followup', 'completed']) $(`#count-${key}`).textContent = key === 'all' ? allOrders.length : key === 'tracking' ? arrivals.inTransit : key === 'repeats' ? repeats.length : summary[key];
+  $('#stats').innerHTML = [ ['Confirmed revenue', money(revenue.revenue), `${revenue.paidOrders} paid orders`, '↗'], ['Total orders', allOrders.length, `${summary.completed} completed`, '◇'], ['Average paid order', money(revenue.averageOrder), 'Confirmed paid orders', '◈'], ['Awaiting payment', money(revenue.outstanding), `${summary.unpaid} active orders need review`, '◷'], ['Active deliveries', summary.active, `${arrivals.inTransit} shipments in transit`, '→'], ['Refunded orders', revenue.refundedOrders, `${revenue.freeOrders} free orders`, '↶'] ].map(([label, value, hint, icon]) => `<div class="stat-card"><div class="stat-label">${label}<span class="stat-icon" aria-hidden="true">${icon}</span></div><strong>${value}</strong><small>${hint}</small></div>`).join('');
+  $('#arrival-overview').innerHTML = [['In transit', arrivals.inTransit], ['Estimated within 48 hours', arrivals.arrivingSoon], ['Carrier exceptions', arrivals.exceptions]].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join('');
+  $('#attention-overview').innerHTML = [['Tracking needed', arrivals.missingTracking], ['Tracking follow-ups due', summary.followup], ['Payment review', summary.unpaid], ['Likely repeats', repeats.length]].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join('');
+  $('#page-title').textContent = queues[queue][0]; $('#page-description').textContent = queues[queue][1];
   $('#queue-title').textContent = queues[queue][0]; $('#queue-description').textContent = queues[queue][1];
   document.querySelectorAll('[data-queue]').forEach(button => { const active = button.dataset.queue === queue; button.classList.toggle('active', active); if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
   $('#sync-state').textContent = lastSync ? `Updated ${lastSync.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'Loading orders';
@@ -94,7 +104,7 @@ function render() {
       : sort === 'room' ? collator.compare(`${a.dorm || ''} ${a.room || ''}`, `${b.dorm || ''} ${b.room || ''}`)
         : sort === 'unpaid' ? Number(b.payment_status === 'unconfirmed' && Number(b.amount_due) > 0) - Number(a.payment_status === 'unconfirmed' && Number(a.amount_due) > 0) || Number(b.amount_due || 0) - Number(a.amount_due || 0) || time(b) - time(a)
           : time(b) - time(a));
-  $('#orders').innerHTML = rows.map(order => `<tr><td data-label="Order / customer"><div class="order-cell"><span class="order-mark" aria-hidden="true">◇</span><div class="order-primary"><button class="order-link" data-open="${esc(order.id)}">${esc(order.recipient_name || 'Customer')}</button><a class="order-phone" href="tel:${esc(order.phone || '')}">${esc(order.phone || 'No phone')}</a><small>#${esc(order.id.slice(0, 8))} · ${esc(date(order.created_at))}</small>${repeatIds.has(order.id) ? '<small class="badge gold">Likely repeat</small>' : ''}</div></div></td><td data-label="Destination"><strong>${esc(order.dorm || 'Not provided')}</strong><small>Room ${esc(order.room || '—')}</small></td><td data-label="Service"><strong>${esc(SERVICE_LABELS[order.service] || order.service)}</strong><small>${esc(order.quantity)} ${Number(order.quantity) === 1 ? 'item' : 'items'}${order.service === 'bigdrop' ? ` · ${esc(SERVICE_LABELS[order.base_service] || '')}` : ''}</small></td><td data-label="Payment"><strong>${money(order.amount_due)}</strong><small>${badge(order.payment_status, PAYMENT_LABELS)}</small>${order.promo_code ? `<small>Promo: ${esc(order.promo_code)} · ${esc(order.discount_percent ?? 0)}% off</small>` : ''}</td><td data-label="Status">${badge(order.order_status)}${needsFollowup(order) ? '<small class="due-label">Tracking follow-up due</small>' : ''}</td><td data-label="Details"><button class="open-order" data-open="${esc(order.id)}" aria-label="Open order ${esc(order.id.slice(0,8))}">Open <span aria-hidden="true">↗</span></button></td></tr>`).join('');
+  $('#orders').innerHTML = rows.map(order => `<tr><td data-label="Ordered"><strong>${esc(date(order.created_at, true))}</strong><small>#${esc(order.id.slice(0, 8))}</small></td><td data-label="Order name"><button class="order-link" data-open="${esc(order.id)}">${esc(order.package_name || order.recipient_name || 'Customer')}</button><small>${esc(order.recipient_name && order.package_name ? order.recipient_name + ' · ' : '')}${esc(order.dorm || 'Dorm unknown')} · ${esc(order.room || '—')}</small>${repeatIds.has(order.id) ? '<small class="badge gold">Likely repeat</small>' : ''}</td><td data-label="Service"><strong>${esc(SERVICE_LABELS[order.service] || order.service)}</strong><small>${esc(order.quantity)} ${Number(order.quantity) === 1 ? 'item' : 'items'}${order.service === 'bigdrop' ? ` · ${esc(SERVICE_LABELS[order.base_service] || '')}` : ''}</small></td><td data-label="Price"><strong>${money(order.amount_due)}</strong>${order.promo_code ? `<small>${esc(order.promo_code)}</small>` : ''}</td><td data-label="Payment">${badge(order.payment_status, PAYMENT_LABELS)}</td><td data-label="Progress">${badge(order.order_status)}${needsFollowup(order) ? '<small class="due-label">Tracking due</small>' : ''}</td><td data-label="Details"><button class="open-order" data-open="${esc(order.id)}" aria-label="Open order ${esc(order.id.slice(0,8))}">Open <span aria-hidden="true">↗</span></button></td></tr>`).join('');
   $('#empty').hidden = rows.length > 0;
   $('#empty').innerHTML = `<span class="empty-symbol" aria-hidden="true">◇</span><h3>${allOrders.length ? 'Nothing in this view.' : 'Ready for the first drop.'}</h3><p>${allOrders.length ? 'Try another queue or clear your filters to see more orders.' : 'New orders will appear here when customers start checkout.'}</p>`;
   $('#result-count').textContent = `Showing ${rows.length} of ${allOrders.length} orders`;
@@ -188,12 +198,15 @@ $('#pickup-filter').onchange = renderPickup;
 $('#pickup-service').onchange = renderPickup;
 setInterval(async () => { if (!document.hidden && !$('#dashboard').hidden && !selectedId && !saving) { await syncCarriers(false); await load(); } }, 60000);
 $('#sync-carriers').onclick = () => syncCarriers(true);
-$('#queue-nav').onclick = event => { const button = event.target.closest('[data-queue]'); if (button) { queue = button.dataset.queue; render(); } };
+$('#queue-nav').onclick = event => { const button = event.target.closest('[data-queue]'); if (button) navigate(button.dataset.queue); };
+$('#overview-panel').onclick = event => { const button = event.target.closest('[data-go]'); if (button) navigate(button.dataset.go); };
+window.addEventListener('popstate', () => { queue = queues[location.hash.slice(1)] ? location.hash.slice(1) : 'overview'; render(); });
 $('#search').oninput = render;
 for (const id of ['service-filter', 'status-filter', 'payment-filter', 'promo-filter', 'sort-orders']) $(`#${id}`).onchange = render;
 $('#reset-filters').onclick = () => { for (const id of ['search', 'service-filter', 'status-filter', 'payment-filter', 'promo-filter']) $(`#${id}`).value = ''; $('#sort-orders').value = 'newest'; render(); };
 function openOrder(event) { const button = event.target.closest('[data-open]'); if (!button) return; detailOpener = button; selectedId = button.dataset.open; deleteConfirming = false; renderDetails(); $('#order-dialog').showModal(); }
 $('#orders').onclick = openOrder; $('#pickup-orders').onclick = openOrder;
+$('#arrival-list').onclick = openOrder;
 $('#close-details').onclick = () => $('#order-dialog').close();
 $('#order-dialog').addEventListener('close', () => { selectedId = null; deleteConfirming = false; detailOpener?.isConnected && detailOpener.focus(); });
 $('#order-details').addEventListener('submit', event => { if (event.target.id === 'tracking-form') { event.preventDefault(); const values = new FormData(event.target); changeTracking('POST', { order_id: selectedId, tracking_code: values.get('tracking_code'), carrier: values.get('carrier'), items_count: Number(values.get('items_count')) }); return; } if (event.target.id === 'readiness-form') { event.preventDefault(); const values = new FormData(event.target); updateOrder({ pickup_readiness: values.get('pickup_readiness'), pickup_note: values.get('pickup_note').trim() }); return; } if (event.target.id !== 'update-form') return; event.preventDefault(); const values = new FormData(event.target); updateOrder({ order_status: values.get('order_status'), payment_status: values.get('payment_status') }); });
@@ -232,6 +245,9 @@ function renderPickup() {
   $('#pickup-sync').textContent = lastSync ? `Orders updated ${lastSync.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'Loading orders';
   const states = allOrders.map(order => pickupReadiness(order).state);
   $('#pickup-summary').innerHTML = [['ready','Ready to collect'],['waiting','Waiting'],['hold','On hold'],['collected','Collected']].map(([key,label]) => `<div><strong>${states.filter(state => state === key).length}</strong><span>${label}</span></div>`).join('');
+  const arrivals = allOrders.filter(order => !['completed', 'cancelled'].includes(order.order_status)).flatMap(order => (order.order_trackers || []).filter(tracker => !['delivered', 'cancelled', 'return_to_sender'].includes(tracker.status)).map(tracker => ({ order, tracker })));
+  arrivals.sort((a, b) => (Date.parse(a.tracker.estimated_delivery_at) || Infinity) - (Date.parse(b.tracker.estimated_delivery_at) || Infinity));
+  $('#arrival-list').innerHTML = arrivals.length ? arrivals.map(({ order, tracker }) => `<div class="arrival-row"><div><button class="order-link" data-open="${esc(order.id)}">${esc(order.package_name || order.recipient_name || order.phone || 'Order')} ↗</button><small>${esc(tracker.carrier || 'Carrier')} · ${esc(tracker.tracking_code)} · ${esc(order.quantity)} ${Number(order.quantity) === 1 ? 'item' : 'items'}</small></div><div><strong>${esc(tracker.estimated_delivery_at ? date(tracker.estimated_delivery_at, true) : 'Estimate unavailable')}</strong><small>${esc(({ pending: 'Awaiting connection', unknown: 'Awaiting scan', pre_transit: 'Label created', in_transit: 'In transit', out_for_delivery: 'Out for delivery', delivered: 'Delivered', available_for_pickup: 'Available for pickup', failure: 'Exception', error: 'Carrier error', return_to_sender: 'Returning to sender' })[tracker.status] || tracker.status || 'Awaiting update')}</small></div></div>`).join('') : '<p class="section-note">No carrier tracking has been added to active orders yet.</p>';
   const rows = filterOrders(allOrders, { search: $('#pickup-search').value, service: $('#pickup-service').value }).filter(order => !$('#pickup-filter').value || pickupReadiness(order).state === $('#pickup-filter').value);
   const priority = { ready: 0, hold: 1, waiting: 2, collected: 3, closed: 4 };
   rows.sort((a,b) => priority[pickupReadiness(a).state] - priority[pickupReadiness(b).state]);
@@ -279,20 +295,20 @@ async function syncCarriers(reload) {
 }
 
 function renderPromos() {
-  const usage = summarizePromoUsage(allOrders);
+  const usage = creatorMetrics(allOrders);
   const selected = $('#promo-filter').value;
   $('#promo-filter').innerHTML = '<option value="">All codes / no promo</option>' + usage.map(row => `<option value="${esc(row.code)}">${esc(row.code)}</option>`).join('');
   if (usage.some(row => row.code === selected)) $('#promo-filter').value = selected;
   const total = usage.reduce((sum, row) => sum + row.total, 0);
-  $('#promo-summary').textContent = `${total} orders with a promo code · ${usage.length} codes used. Updates when orders refresh.`;
-  $('#promo-rows').innerHTML = usage.length ? usage.map(row => `<tr><td data-label="Code"><strong>${esc(row.code)}</strong></td>${[['total','Orders'],['paid','Paid'],['free','Free'],['awaiting','Awaiting payment'],['cancelled','Cancelled'],['refunded','Refunded']].map(([key, label]) => `<td data-label="${label}">${row[key]}</td>`).join('')}<td data-label="Details"><button class="text-button" data-promo="${esc(row.code)}" aria-label="View orders using ${esc(row.code)}">View orders ↗</button></td></tr>`).join('') : '<tr><td colspan="8">No promo codes recorded on these orders yet.</td></tr>';
+  $('#count-creators').textContent = usage.length;
+  $('#promo-summary').textContent = `${total} orders with a code · ${usage.length} codes used · ${money(usage.reduce((sum, row) => sum + row.revenue, 0))} confirmed revenue.`;
+  $('#promo-rows').innerHTML = usage.length ? usage.map(row => `<tr><td data-label="Code"><strong>${esc(row.code)}</strong><small>${row.customers} customers</small></td><td data-label="Orders">${row.total}</td><td data-label="Paid orders">${row.paidOrders}</td><td data-label="Paid revenue"><strong>${money(row.revenue)}</strong></td><td data-label="Free">${row.free}</td><td data-label="Awaiting">${row.awaiting}</td><td data-label="Cancelled / refunded">${row.cancelled + row.refunded}</td><td data-label="Orders"><button class="text-button" data-promo="${esc(row.code)}" aria-label="View orders using ${esc(row.code)}">View orders ↗</button></td></tr>`).join('') : '<tr><td colspan="8">No promo codes recorded on these orders yet.</td></tr>';
 }
 $('#promo-rows').onclick = event => {
   const button = event.target.closest('[data-promo]');
   if (!button) return;
-  queue = 'all';
   for (const id of ['search', 'service-filter', 'status-filter', 'payment-filter']) $(`#${id}`).value = '';
   $('#promo-filter').value = button.dataset.promo;
-  render();
+  navigate('all');
   $('#order-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
