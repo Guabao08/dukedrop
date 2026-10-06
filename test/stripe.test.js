@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import createCheckoutSession from '../api/create-checkout-session.js';
-import config from '../api/config.js';
+import orders from '../api/orders.js';
 
 const envKeys = ['STRIPE_SECRET_KEY', 'STRIPE_PUBLISHABLE_KEY', 'STRIPE_WEBHOOK_SECRET', 'ORDER_STORAGE_ENABLED', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
 function response() {
@@ -23,12 +23,12 @@ test('Stripe Checkout endpoint requires configuration and validates orders befor
   assert.equal(res.code, 400);
 });
 
-test('public config reports Stripe readiness without exposing a secret key', t => {
+test('public config route reports Stripe readiness without exposing a secret key', async t => {
   const previous = Object.fromEntries(envKeys.map(key => [key, process.env[key]]));
   t.after(() => { for (const [key, value] of Object.entries(previous)) value === undefined ? delete process.env[key] : process.env[key] = value; });
   for (const key of envKeys) delete process.env[key];
   const res = response();
-  config({}, res);
+  await orders({ method: 'GET' }, res);
   assert.equal(res.body.stripeReady, false);
   assert.equal('stripeSecretKey' in res.body, false);
 });

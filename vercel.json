@@ -19,6 +19,9 @@
   },
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/api/config", "destination": "/api/orders" }
+  ],
   "crons": [
     {
       "path": "/api/tracking/reconcile",

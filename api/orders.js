@@ -1,5 +1,6 @@
 import { syncTracking } from '../lib/carrier-tracking.js';
 import { checkoutToken, consumeRateLimit } from '../lib/api-security.js';
+import publicConfig from '../lib/public-config.js';
 import { capturePosthog } from '../lib/posthog.js';
 import { flushPosthogLogs, logOrderCreated } from '../lib/posthog-logs.js';
 import { isPromoEligible, promoDiscountPercent } from '../promo-rules.js';
@@ -21,6 +22,7 @@ export function totalFor(o) {
 }
 
 export default async function handler(req, res) {
+  if (req.method === 'GET') return publicConfig(req, res);
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   if (process.env.ORDER_STORAGE_ENABLED !== 'true' || !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return res.status(503).json({ error: 'Order storage is not configured' });
   try {
