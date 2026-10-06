@@ -17,7 +17,7 @@ test('Stripe Checkout endpoint requires configuration and validates orders befor
   assert.equal(res.code, 503);
   assert.equal(res.headers['Cache-Control'], 'no-store');
 
-  Object.assign(process.env, { STRIPE_SECRET_KEY: 'test-secret', STRIPE_PUBLISHABLE_KEY: 'pk_test', STRIPE_PRICE_ID: 'price_test', ORDER_STORAGE_ENABLED: 'true', SUPABASE_URL: 'https://storage.example', SUPABASE_SERVICE_ROLE_KEY: 'test-storage' });
+  Object.assign(process.env, { STRIPE_SECRET_KEY: 'test-secret', STRIPE_PUBLISHABLE_KEY: 'pk_test', STRIPE_WEBHOOK_SECRET: 'whsec_test', ORDER_STORAGE_ENABLED: 'true', SUPABASE_URL: 'https://storage.example', SUPABASE_SERVICE_ROLE_KEY: 'test-storage' });
   res = response();
   await createCheckoutSession({ method: 'POST', body: { order: {} } }, res);
   assert.equal(res.code, 400);

@@ -16,6 +16,9 @@ test('order, card checkout, and dashboard login send their PostHog events', () =
   }`;
   const logsMock = `export const logOrderCreated = (entry) => globalThis.orderLogs.push(entry);
     export const flushPosthogLogs = async () => {};`;
+  const securityMock = `export const checkoutToken = () => 'test-checkout-token';
+    export const validCheckoutToken = () => true;
+    export const consumeRateLimit = async () => true;`;
   const script = `
     import assert from 'node:assert/strict';
     import { registerHooks } from 'node:module';
@@ -24,13 +27,20 @@ test('order, card checkout, and dashboard login send their PostHog events', () =
       if (specifier === 'posthog-node') return { url: moduleUrl(${JSON.stringify(posthogMock)}), shortCircuit: true };
       if (specifier === 'stripe') return { url: moduleUrl(${JSON.stringify(stripeMock)}), shortCircuit: true };
       if (specifier === '../lib/posthog-logs.js') return { url: moduleUrl(${JSON.stringify(logsMock)}), shortCircuit: true };
+      if (specifier === '../lib/api-security.js') return { url: moduleUrl(${JSON.stringify(securityMock)}), shortCircuit: true };
       return nextResolve(specifier, context);
     }});
     globalThis.posthogEvents = [];
     globalThis.orderLogs = [];
     function response() { return { headers: {}, setHeader(k,v){this.headers[k]=v}, status(n){this.code=n;return this}, json(x){this.body=x;return this} }; }
-    const order = { service:'express', quantity:1, dorm:'PostHog test', room:'TEST-20261001', phone:'9195550187' };
-    globalThis.fetch = async () => ({ ok:true, json:async()=>[{id:'order-test-123'}] });
+    const orderId = '123e4567-e89b-42d3-a456-426614174000';
+    const order = { service:'express', quantity:1, dorm:'PostHog test', room:'TEST-20261001', phone:'9195550187', payMethod:'card' };
+    globalThis.fetch = async (url, options = {}) => {
+      const parsed = new URL(url);
+      if (parsed.pathname === '/rest/v1/rpc/consume_api_rate_limit') return { ok:true, json:async()=>true };
+      if (options.method === 'POST') return { ok:true, json:async()=>[{id:orderId}] };
+      return { ok:true, json:async()=>[{ id:orderId, service:'express', quantity:1, promo_code:null, amount_due:4.99, payment_method:'card', payment_status:'unconfirmed' }] };
+    };
     process.env.ORDER_STORAGE_ENABLED='true';
     process.env.SUPABASE_URL='https://storage.example';
     process.env.SUPABASE_SERVICE_ROLE_KEY='test-storage';
@@ -43,10 +53,10 @@ test('order, card checkout, and dashboard login send their PostHog events', () =
 
     process.env.STRIPE_SECRET_KEY='sk_test_mock';
     process.env.STRIPE_PUBLISHABLE_KEY='pk_test_mock';
-    process.env.STRIPE_PRICE_ID='price_test_mock';
+    process.env.STRIPE_WEBHOOK_SECRET='whsec_test_mock';
     const { default: createCheckout } = await import('./api/create-checkout-session.js');
     const checkout = response();
-    await createCheckout({method:'POST',body:{order}}, checkout);
+    await createCheckout({method:'POST',body:{orderId,checkoutToken:'test-checkout-token'}}, checkout);
     assert.equal(checkout.code,200);
     assert.deepEqual(checkout.body,{client_secret:'cs_test_mock'});
     assert.equal(globalThis.posthogEvents[1].event,'card_checkout_started');

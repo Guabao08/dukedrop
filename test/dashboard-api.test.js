@@ -24,28 +24,32 @@ test('staff can sign in and load orders when analytics packages are unavailable'
         json(body) { this.body = body; return this; },
       };
     }
+    let requests = 0;
+    globalThis.fetch = async (url, options) => {
+      requests++;
+      const parsed = new URL(url);
+      if (parsed.pathname === '/rest/v1/rpc/consume_api_rate_limit') {
+        return { ok: true, json: async () => true };
+      }
+      assert.equal(parsed.origin, 'https://storage.example');
+      assert.equal(parsed.pathname, '/rest/v1/orders');
+      assert.equal(parsed.searchParams.get('select'), '*,order_trackers(*),order_sms_messages(*)');
+      assert.equal(options.headers.apikey, 'test-service-key');
+      return { ok: true, json: async () => [{ id: 'test-order', order_trackers: [] }] };
+    };
     const signedIn = response();
     await login({ method: 'POST', headers: {}, body: { password: 'test-password' } }, signedIn);
     assert.equal(signedIn.code, 200);
     const cookie = signedIn.headers['Set-Cookie'].split(';')[0];
-    let requests = 0;
-    globalThis.fetch = async (url, options) => {
-      requests++;
-      assert.equal(url.origin, 'https://storage.example');
-      assert.equal(url.pathname, '/rest/v1/orders');
-      assert.equal(url.searchParams.get('select'), '*,order_trackers(*),order_sms_messages(*)');
-      assert.equal(options.headers.apikey, 'test-service-key');
-      return { ok: true, json: async () => [{ id: 'test-order', order_trackers: [] }] };
-    };
     const loaded = response();
     await orders({ method: 'GET', headers: { cookie } }, loaded);
     assert.equal(loaded.code, 200);
     assert.deepEqual(loaded.body, [{ id: 'test-order', order_trackers: [] }]);
-    assert.equal(requests, 1);
+    assert.equal(requests, 2);
     const unsigned = response();
     await orders({ method: 'GET', headers: {} }, unsigned);
     assert.equal(unsigned.code, 401);
-    assert.equal(requests, 1);
+    assert.equal(requests, 2);
   `;
   const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
     cwd: new URL('../', import.meta.url),
