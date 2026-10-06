@@ -1,7 +1,5 @@
 import Stripe from 'stripe';
 
-export const config = { api: { bodyParser: false } };
-
 async function rawBody(req) {
   if (Buffer.isBuffer(req.body)) return req.body;
   const chunks = [];
