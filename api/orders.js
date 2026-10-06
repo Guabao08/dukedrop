@@ -1,6 +1,5 @@
 import { syncTracking } from '../lib/carrier-tracking.js';
 import { checkoutToken, consumeRateLimit } from '../lib/api-security.js';
-import publicConfig from '../lib/public-config.js';
 import { capturePosthog } from '../lib/posthog.js';
 import { flushPosthogLogs, logOrderCreated } from '../lib/posthog-logs.js';
 import { isPromoEligible, promoDiscountPercent } from '../promo-rules.js';
@@ -8,6 +7,13 @@ import { isPromoEligible, promoDiscountPercent } from '../promo-rules.js';
 const allowedServices = new Set(['express', 'pickup', 'returns', 'bigdrop']);
 const allowedBaseServices = new Set(['express', 'pickup', 'returns']);
 const tiers = { express: [[2,4.99],[4,3.99],[50,2.99]], pickup: [[2,3.99],[4,2.99],[50,1.99]], returns: [[2,4.99],[4,3.99],[50,2.99]], bigdrop: [[50,12]] };
+
+function publicConfig(_req, res) {
+  res.setHeader('Cache-Control', 'no-store');
+  const orderStorageEnabled = process.env.ORDER_STORAGE_ENABLED === 'true' && Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const stripeReady = Boolean(process.env.STRIPE_PUBLISHABLE_KEY && process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET && orderStorageEnabled);
+  return res.status(200).json({ supabaseUrl: process.env.SUPABASE_URL || '', supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '', orderStorageEnabled, stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || '', stripeReady, posthogProjectToken: process.env.POSTHOG_PROJECT_TOKEN, posthogHost: process.env.POSTHOG_HOST });
+}
 
 export function isValidOrder(o) {
   return o && allowedServices.has(o.service) && (!o.baseService || allowedBaseServices.has(o.baseService)) && Number.isInteger(o.quantity) && o.quantity >= 1 && o.quantity <= 50 &&
