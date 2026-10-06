@@ -66,7 +66,7 @@ and [Messaging Service inbound routing](https://www.twilio.com/docs/messaging/se
 ## 5. Deploy and test one order
 
 1. Deploy this repository revision to Vercel after applying the migration and
-   setting the variables. Confirm the two SMS cron jobs appear in Vercel's
+   setting the variables. Confirm the SMS cron job appears in Vercel's
    project settings.
 2. Place a test non-return order using your own mobile number, select Amazon
    or Other, and check the SMS consent box. Mark the order paid in the staff
@@ -81,7 +81,7 @@ and [Messaging Service inbound routing](https://www.twilio.com/docs/messaging/se
    Send `HELP` and `STOP` from the test phone to verify Twilio's keyword
    handling; `STOP` should prevent further messages.
 
-Two Vercel crons run daily at 16:00 and 22:00 UTC. Vercel Hobby can invoke
-within the scheduled hour, so follow-ups normally leave about 24–43 hours
+One Vercel cron runs daily at 16:00 UTC. Vercel Hobby can invoke
+within the scheduled hour, so follow-ups normally leave about 24–48 hours
 after the **dashboard's payment confirmation**, not necessarily the payment
 app's transaction time. See [Vercel cron limits](https://vercel.com/docs/cron-jobs/usage-and-pricing).

@@ -27,10 +27,6 @@
     {
       "path": "/api/sms/reconcile",
       "schedule": "0 16 * * *"
-    },
-    {
-      "path": "/api/sms/reconcile-evening",
-      "schedule": "0 22 * * *"
     }
   ]
 }
