@@ -4,6 +4,10 @@
       "includeFiles": "supabase/**",
       "maxDuration": 60
     },
+    "api/stripe-webhook.js": {
+      "maxDuration": 60,
+      "bodyParser": false
+    },
     "api/tracking/*.js": {
       "maxDuration": 60
     },

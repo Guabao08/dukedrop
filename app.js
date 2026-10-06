@@ -673,11 +673,11 @@ if (typeof document !== 'undefined') {
         state[key].paymentBusy = false; render(); return;
       }
       try {
-        const response = await fetch('/api/create-checkout-session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order: paymentOrder }) });
+        if (!await saveOrder(key, paymentOrder)) throw new Error(state[key].saveError || 'We could not save your order before checkout.');
+        const response = await fetch('/api/create-checkout-session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId: state[key].savedOrder?.orderId, checkoutToken: state[key].savedOrder?.checkoutToken }) });
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || 'Could not start Stripe checkout.');
         if (!body.client_secret) throw new Error('Stripe did not return a Checkout client secret.');
-        if (!await saveOrder(key, paymentOrder)) throw new Error('We could not save your order. Please contact DukeDrop before paying.');
         state[key].stripeClientSecret = body.client_secret;
         render();
         checkoutRendered = true;
@@ -732,7 +732,7 @@ if (typeof document !== 'undefined') {
       const response = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
       if (!response.ok) throw new Error('Order could not be saved. Please contact DukeDrop.');
       const saved = await response.json();
-      state[key].savedOrder = { ...o, orderId: saved.id };
+      state[key].savedOrder = { ...o, orderId: saved.id, checkoutToken: saved.checkoutToken };
       state[key].saved = true;
       return true;
     } catch {

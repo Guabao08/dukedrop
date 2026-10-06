@@ -1,4 +1,5 @@
 import { syncTracking } from '../lib/carrier-tracking.js';
+import { checkoutToken, consumeRateLimit } from '../lib/api-security.js';
 import { capturePosthog } from '../lib/posthog.js';
 import { flushPosthogLogs, logOrderCreated } from '../lib/posthog-logs.js';
 import { isPromoEligible, promoDiscountPercent } from '../promo-rules.js';
@@ -22,6 +23,9 @@ export function totalFor(o) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   if (process.env.ORDER_STORAGE_ENABLED !== 'true' || !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return res.status(503).json({ error: 'Order storage is not configured' });
+  try {
+    if (!await consumeRateLimit(req, 'order-create', 5, 600)) return res.status(429).json({ error: 'Too many order attempts. Please wait before trying again.' });
+  } catch { return res.status(503).json({ error: 'Order storage is temporarily unavailable.' }); }
   const o = req.body || {};
   if (!isValidOrder(o)) return res.status(400).json({ error: 'Please complete the required order details.' });
   const row = {
@@ -55,6 +59,9 @@ export default async function handler(req, res) {
     });
     logOrderCreated({ service: row.service, quantity: row.quantity });
     await flushPosthogLogs();
-    return res.status(201).json({ id: saved.id });
+    return res.status(201).json({
+      id: saved.id,
+      ...(row.payment_method === 'card' ? { checkoutToken: checkoutToken(saved.id) } : {}),
+    });
   } catch { return res.status(502).json({ error: 'Could not save the order.' }); }
 }

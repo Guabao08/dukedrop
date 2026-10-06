@@ -4,14 +4,14 @@ Mobile-friendly order form with Express, Pickup, and Returns service options, ea
 
 ## Supabase setup
 
-The connected Supabase project (`cyisyclzzjkupsludvqk`) has the SQL in `supabase/schema.sql`, `supabase/tracking-followup.sql`, `supabase/pickup-readiness.sql`, `supabase/carrier-tracking.sql`, and `supabase/tracking-subscriptions.sql` applied. Apply `supabase/sms-followup.sql` before deploying the SMS code. The schema enables RLS. The dashboard uses a shared password checked by server-side API routes; it does not require Supabase Auth accounts.
+The connected Supabase project (`cyisyclzzjkupsludvqk`) has the SQL in `supabase/schema.sql`, `supabase/tracking-followup.sql`, `supabase/pickup-readiness.sql`, `supabase/carrier-tracking.sql`, and `supabase/tracking-subscriptions.sql` applied. Apply `supabase/sms-followup.sql` before deploying the SMS code and `supabase/api-rate-limits.sql` before deploying the rate-limited order and login APIs. The schema enables RLS. The dashboard uses a shared password checked by server-side API routes; it does not require Supabase Auth accounts.
 
 To finish connecting production:
 
 1. Set Vercel environment variables `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ORDER_STORAGE_ENABLED=true`, and `DASHBOARD_PASSWORD`. Store the service role key and dashboard password as sensitive server-side values. They must never be sent to frontend code. Order storage becomes active only when the toggle and server credentials are present.
 2. Deploy. The internal dashboard is at `/dashboard/`. A successful password check creates an eight-hour signed, HttpOnly session cookie; the API uses the service role key only after validating that session.
 
-For a new project or a reset, run `supabase/schema.sql` first and `supabase/tracking-followup.sql` second, then `supabase/pickup-readiness.sql`, `supabase/carrier-tracking.sql`, `supabase/tracking-subscriptions.sql`, and `supabase/sms-followup.sql` in the Supabase SQL Editor. The public order API validates fields and recomputes amounts from server-side pricing and promo rules. The service role key remains server-only.
+For a new project or a reset, run `supabase/schema.sql` first and `supabase/tracking-followup.sql` second, then `supabase/pickup-readiness.sql`, `supabase/carrier-tracking.sql`, `supabase/tracking-subscriptions.sql`, `supabase/sms-followup.sql`, and `supabase/api-rate-limits.sql` in the Supabase SQL Editor. The public order API validates fields and recomputes amounts from server-side pricing and promo rules. Checkout requires a server-signed token returned when the order is created. Order creation and dashboard login use durable per-IP rate limits backed by Supabase; they fail closed if the rate-limit RPC is unavailable. The service role key remains server-only.
 
 ## Operations dashboard
 
@@ -22,6 +22,12 @@ The dashboard opens on a compact overview of confirmed revenue, paid order avera
 Payment verification reads the public sheet and maps columns by header name. Only rows explicitly marked Paid participate; identical duplicate rows are ignored. Automatic matches require the same service, quantity and dorm, plus the same room (or an exact tracking number when a room is missing). The amount and payment method must match unless an exact tracking number or customer/package name also identifies the order; a one-cent round-up is accepted. Strong unique matches copy the sheet's final amount, method and supplied details into the dashboard. Competing matches stay unconfirmed, blank cells do not erase saved details, refunded orders remain refunded, and receipt IDs already linked to another order cannot be reused.
 
 On mobile, Venmo checkout saves the order first, then presents a directly tapped app link. The recipient, exact total and note remain available to copy, with a profile link when app opening or prefilling is unavailable. Opening Venmo does not confirm payment.
+
+### Stripe card payments
+
+Card checkout creates the order first, then creates an embedded Stripe Checkout Session using the saved order's server-computed amount. A signed Stripe webhook at `/api/stripe-webhook` is the only automatic path that marks a card order paid and moves it to `received`; the browser's success message is informational. The webhook checks paid status, USD currency, order ID, card method, and exact stored amount, and duplicate deliveries are safe to retry.
+
+To activate Stripe, configure `STRIPE_PUBLISHABLE_KEY` (`pk_test_…` or `pk_live_…`), `STRIPE_SECRET_KEY` (`sk_test_…` or `sk_live_…`), and `STRIPE_WEBHOOK_SECRET` (`whsec_…`) as Vercel environment variables for the same environment. Keep secret and webhook signing keys server-only. No Stripe Price is required; the backend creates a one-time USD amount from the saved DukeDrop order. In Stripe Workbench, create a webhook endpoint for `https://<production-domain>/api/stripe-webhook` and subscribe to `checkout.session.completed` and `checkout.session.async_payment_succeeded`; copy that endpoint's signing secret into Vercel. Enable order storage and its Supabase credentials, deploy, then use Stripe test-mode keys and a test card to verify a paid order appears in the dashboard. Configure and test the live-mode endpoint and live keys separately before accepting real payments. Keep test and live keys/signing secrets paired by environment.
 
 ### Pickup readiness
 

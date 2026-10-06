@@ -2,13 +2,15 @@
 
 ## Production activation
 
-1. Create an EasyPost account and enable its production Tracking API access. Review current tracking charges in the EasyPost dashboard before registering live shipments.
-2. Add the production API key to the DukeDrop Vercel project's Production environment as the sensitive variable `EASYPOST_API_KEY`. Never commit it or expose it to the browser.
-3. Ensure `EASYPOST_WEBHOOK_SECRET` and `CRON_SECRET` are set to separate random secrets in the same environment. For a new project, generate values of at least 32 random bytes.
-4. Redeploy after changing environment variables. Open **Pickup readiness → Sync carrier tracking**. The server registers the production webhook automatically, then registers due shipments. Review per-shipment errors in the order details.
-5. Confirm a real carrier update appears in the panel before relying on unattended operation. Test-mode tracker events are deliberately ignored in production.
+1. In EasyPost, use the **production** API key and confirm your account can create Trackers. EasyPost accepts tracking numbers for labels purchased elsewhere; some carriers may require a linked carrier account. Review current tracking charges before registering live shipments.
+2. In Vercel → Project → Settings → Environment Variables, add `EASYPOST_API_KEY` as a sensitive server-only variable. Do not use the test key for production.
+3. Add `EASYPOST_WEBHOOK_SECRET` as a separate random secret (at least 32 random bytes). This signs inbound webhook calls; it is not the EasyPost API key.
+4. Confirm `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set in the same Vercel environment, and the tracking migrations below have been applied. The service role key must remain server-only.
+5. Confirm `CRON_SECRET` is set to a random secret. If it is already used by the SMS cron, keep the existing value. Set `DASHBOARD_ORIGIN` only when the production hostname differs from `https://dukedrop-1jej.vercel.app`.
+6. Redeploy after changing variables. Open the dashboard's **Tracking** view and use **Sync tracking**. The server registers the production webhook automatically, then registers due shipments. Review per-shipment errors in the order details.
+7. Add a real tracking number and carrier to an active order. Confirm a carrier update appears before relying on unattended operation. Test-mode tracker events are deliberately ignored in production.
 
-The default webhook origin is `https://dukedrop-1jej.vercel.app`. Set the server-only `DASHBOARD_ORIGIN` if the production hostname changes. The callback is `/api/tracking/webhook`; it verifies EasyPost's signed raw request using the dedicated `EASYPOST_WEBHOOK_SECRET`, not the dashboard password. The script `scripts/configure-tracking.mjs` can also register the webhook when run in an environment containing the same server secrets. It does not print credentials.
+The default webhook origin is `https://dukedrop-1jej.vercel.app`. Set the server-only `DASHBOARD_ORIGIN` if the production hostname changes. The callback is `/api/tracking/webhook`; it verifies EasyPost's signed raw request using the dedicated `EASYPOST_WEBHOOK_SECRET`, not the dashboard password. The script `scripts/configure-tracking.mjs` can also register the webhook when run in an environment containing the production API key and webhook secret. It does not print credentials. It is optional because the dashboard sync registers the webhook automatically.
 
 ## What happens automatically
 
