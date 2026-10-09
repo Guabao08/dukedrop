@@ -1,4 +1,5 @@
 import { syncTracking } from '../lib/carrier-tracking.js';
+import { isPickupUnavailable, PICKUP_UNAVAILABLE_MESSAGE } from '../app.js';
 import { checkoutToken, consumeRateLimit } from '../lib/api-security.js';
 import { capturePosthog } from '../lib/posthog.js';
 import { flushPosthogLogs, logOrderCreated } from '../lib/posthog-logs.js';
@@ -30,6 +31,7 @@ export function totalFor(o) {
 export default async function handler(req, res) {
   if (req.method === 'GET') return publicConfig(req, res);
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (isPickupUnavailable(req.body || {})) return res.status(503).json({ error: PICKUP_UNAVAILABLE_MESSAGE });
   if (process.env.ORDER_STORAGE_ENABLED !== 'true' || !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return res.status(503).json({ error: 'Order storage is not configured' });
   try {
     if (!await consumeRateLimit(req, 'order-create', 5, 600)) return res.status(429).json({ error: 'Too many order attempts. Please wait before trying again.' });

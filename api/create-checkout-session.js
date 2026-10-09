@@ -1,4 +1,5 @@
 import Stripe from 'stripe';
+import { isPickupUnavailable, PICKUP_UNAVAILABLE_MESSAGE } from '../app.js';
 import { totalFor } from './orders.js';
 import { capturePosthog } from '../lib/posthog.js';
 import { validCheckoutToken } from '../lib/api-security.js';
@@ -24,6 +25,9 @@ export default async function handler(req, res) {
     });
     if (!orderResponse.ok) return res.status(502).json({ error: 'Could not verify the saved order.' });
     const [order] = await orderResponse.json();
+    if (order && isPickupUnavailable({ service: order.service, baseService: order.base_service, mode: order.fulfillment_mode })) {
+      return res.status(503).json({ error: PICKUP_UNAVAILABLE_MESSAGE });
+    }
     if (!order || order.payment_method !== 'card' || order.payment_status !== 'unconfirmed' || Number(order.amount_due) <= 0) {
       return res.status(409).json({ error: 'This order is not eligible for card checkout.' });
     }

@@ -125,6 +125,13 @@ export function isPickupStyle(service, mode) {
   return service === 'pickup' || (service === 'bigdrop' && mode === 'pickup');
 }
 
+// Temporary service pause. Keep order validation/pricing intact for existing orders.
+export const PICKUP_UNAVAILABLE_MESSAGE = 'Pickup is temporarily out of order. We are not accepting pickup orders right now. Please check back later.';
+export function isPickupUnavailable(order) {
+  return order.service === 'pickup' || order.baseService === 'pickup' ||
+    (order.service === 'bigdrop' && order.mode === 'pickup');
+}
+
 export function buildMemo({ service, quantity, dorm, room, carrier, tracking, source, mailroom, box, lockerLocation, locker, name, mode }) {
   const prefix = SERVICE_DETAILS[service].memoPrefix;
   let memo = `${prefix} ${quantity}x — ${dorm || '[Dorm]'} ${room || '[Room]'}`;
@@ -315,7 +322,7 @@ if (typeof document !== 'undefined') {
     const isBigDrop = state[state.active].size === 'bigdrop';
     return `
       <div class="tabs" aria-label="Order service">${['express', 'pickup', 'returns'].map((k) =>
-        `<button type="button" class="tab${state.active === k ? ' active' : ''}" data-action="tab" data-service="${k}">${SERVICE_DETAILS[k].title}</button>`
+        `<button type="button" class="tab${state.active === k ? ' active' : ''}" data-action="tab" data-service="${k}">${SERVICE_DETAILS[k].title}${k === 'pickup' ? ' · Out of order' : ''}</button>`
       ).join('')}</div>
       <div class="toggle-row" aria-label="Order size"><button type="button" class="tab${!isBigDrop ? ' active' : ''}" data-action="size" data-size="standard">Normal size</button><button type="button" class="tab${isBigDrop ? ' active' : ''}" data-action="size" data-size="bigdrop">Big Drop</button></div>`;
   }
@@ -425,6 +432,7 @@ if (typeof document !== 'undefined') {
   }
 
   function cardHtml(key) {
+    if (key === 'pickup') return `<section class="card"><div class="callout" role="status"><span class="callout-label">Pickup · Out of order</span>${PICKUP_UNAVAILABLE_MESSAGE}</div></section>`;
     const displayService = state[key].size === 'bigdrop' ? 'bigdrop' : key;
     const detail = SERVICE_DETAILS[displayService];
     const s = state[key];
