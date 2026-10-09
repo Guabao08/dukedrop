@@ -322,9 +322,9 @@ if (typeof document !== 'undefined') {
     const isBigDrop = state[state.active].size === 'bigdrop';
     return `
       <div class="tabs" aria-label="Order service">${['express', 'pickup', 'returns'].map((k) =>
-        `<button type="button" class="tab${state.active === k ? ' active' : ''}" data-action="tab" data-service="${k}">${SERVICE_DETAILS[k].title}${k === 'pickup' ? ' · Out of order' : ''}</button>`
+        `<button type="button" class="tab${state.active === k ? ' active' : ''}" data-action="tab" data-service="${k}">${SERVICE_DETAILS[k].title}${k === 'pickup' ? ' <span class="service-status">Paused</span>' : ''}</button>`
       ).join('')}</div>
-      <div class="toggle-row" aria-label="Order size"><button type="button" class="tab${!isBigDrop ? ' active' : ''}" data-action="size" data-size="standard">Normal size</button><button type="button" class="tab${isBigDrop ? ' active' : ''}" data-action="size" data-size="bigdrop">Big Drop</button></div>`;
+      <div class="toggle-row" aria-label="Order size"${state.active === 'pickup' ? ' hidden' : ''}><button type="button" class="tab${!isBigDrop ? ' active' : ''}" data-action="size" data-size="standard">Normal size</button><button type="button" class="tab${isBigDrop ? ' active' : ''}" data-action="size" data-size="bigdrop">Big Drop</button></div>`;
   }
 
   function bannerHtml(key) {
@@ -432,7 +432,7 @@ if (typeof document !== 'undefined') {
   }
 
   function cardHtml(key) {
-    if (key === 'pickup') return `<section class="card"><div class="callout" role="status"><span class="callout-label">Pickup · Out of order</span>${PICKUP_UNAVAILABLE_MESSAGE}</div></section>`;
+    if (key === 'pickup') return `<section class="card pickup-paused" aria-labelledby="pickup-paused-title"><div class="pause-label">Temporarily unavailable</div><h2 id="pickup-paused-title">Pickup is taking a pause.</h2><p>We’re not accepting mailroom or locker pickup orders right now. Please check back later.</p><button type="button" class="pause-action" data-action="tab" data-service="express">Explore Express <span aria-hidden="true">→</span></button></section>`;
     const displayService = state[key].size === 'bigdrop' ? 'bigdrop' : key;
     const detail = SERVICE_DETAILS[displayService];
     const s = state[key];
