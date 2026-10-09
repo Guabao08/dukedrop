@@ -416,7 +416,7 @@ if (typeof document !== 'undefined') {
         const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         // Keep a real link for browsers that block the automatic app handoff
         // after the asynchronous order save.
-        return `<div class="fallback"><strong>Order saved · ready to pay</strong><p>Pay <strong>@${VENMO_USERNAME}</strong> exactly <strong>${money(Number(payment.amount))}</strong>. Copy the note below before opening Venmo.</p><div class="fallback-mono" data-role="venmo-note">${esc(payment.note)}</div><button type="button" class="copy-btn" data-action="copy" data-value-role="venmo-note">Copy payment note</button><button type="button" class="copy-btn" data-action="copy" data-value="${esc(payment.recipient)}">Copy recipient</button><button type="button" class="copy-btn" data-action="copy" data-value="${esc(payment.amount)}">Copy amount</button><a class="btn-pay venmo-profile-link" href="${esc(mobile ? payment.appUrl : payment.paymentUrl)}">${mobile ? 'Open Venmo app' : 'Continue to Venmo'} <span aria-hidden="true">↗</span></a><p>If the payment details are not filled in, paste the recipient, amount, and note above. Check all three before paying.</p><p><a href="${payment.profileUrl}">Open @${VENMO_USERNAME}’s Venmo profile</a> if the app link does not open. In an Instagram or other in-app browser, open this page in Safari or Chrome first.</p><p>Send one payment for this order. Payment is confirmed after DukeDrop matches it to the payment sheet.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
+        return `<div class="fallback"><strong>Order saved · ready to pay</strong><p>Pay <strong>@${VENMO_USERNAME}</strong> exactly <strong>${money(Number(payment.amount))}</strong>. Copy the note below before opening Venmo.</p><div class="fallback-mono" data-role="venmo-note">${esc(payment.note)}</div><button type="button" class="copy-btn" data-action="copy" data-value-role="venmo-note">Copy payment note</button><button type="button" class="copy-btn" data-action="copy" data-value="${esc(payment.recipient)}">Copy recipient</button><button type="button" class="copy-btn" data-action="copy" data-value="${esc(payment.amount)}">Copy amount</button><a class="btn-pay venmo-profile-link" href="${esc(mobile ? payment.appUrl : payment.paymentUrl)}">${mobile ? 'Open Venmo app' : 'Continue to Venmo'} <span aria-hidden="true">↗</span></a><p>If the payment details are not filled in, paste the recipient, amount, and note above. Check all three before paying.</p><p><a href="${payment.profileUrl}">Open @${VENMO_USERNAME}’s Venmo profile</a> if the app link does not open. In an Instagram or other in-app browser, open this page in Safari or Chrome first.</p><p>Send one payment for this order. Payment is confirmed after DevilDrop matches it to the payment sheet.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
       }
       return `<button type="button" class="btn-pay" data-action="pay-venmo" ${vm.ready && !s.paymentBusy ? '' : 'disabled'}>${label}</button>`;
     }
@@ -461,7 +461,7 @@ if (typeof document !== 'undefined') {
         <label>Phone number<input type="tel" inputmode="tel" autocomplete="tel" placeholder="e.g. (919) 555-0123" value="${esc(s.phone || '')}" data-field="phone" required></label>
         ${sourceToggleHtml(key)}
         ${key !== 'returns' ? `<div class="tracking-fields"><label>Ordered from<select data-field="retailer"><option value="other"${s.retailer === 'other' ? ' selected' : ''}>Another store</option><option value="amazon"${s.retailer === 'amazon' ? ' selected' : ''}>Amazon</option></select></label><label>Carrier (if known)<input type="text" placeholder="e.g. UPS, USPS, FedEx, DHL" value="${esc(s.carrier)}" data-field="carrier"></label><label>Tracking/order numbers (if available)<span class="field-hint">If you opt in below, we’ll text 24–48 hours after payment to confirm shipping details and estimated delivery.</span><textarea rows="3" placeholder="Enter tracking/order number if available" data-field="tracking"></textarea></label></div>` : ''}
-        ${key !== 'returns' ? `<label class="sms-opt-in"><input type="checkbox" data-field="smsOptIn" ${s.smsOptIn ? 'checked' : ''}> DukeDrop may text me once after payment to request shipping details and an estimated delivery date. Message and data rates may apply. Reply STOP to opt out or HELP for help.</label>` : ''}
+        ${key !== 'returns' ? `<label class="sms-opt-in"><input type="checkbox" data-field="smsOptIn" ${s.smsOptIn ? 'checked' : ''}> DevilDrop may text me once after payment to request shipping details and an estimated delivery date. Message and data rates may apply. Reply STOP to opt out or HELP for help.</label>` : ''}
         ${consentHtml(key, vm)}
         <label>Promo code (optional)
           <input type="text" placeholder="Enter promo code" value="${esc(state.promoCode)}" data-field="promoCode" maxlength="64" autocapitalize="characters" autocorrect="off" spellcheck="false" aria-describedby="promo-code-hint">
@@ -677,7 +677,7 @@ if (typeof document !== 'undefined') {
       let checkoutRendered = false;
       if (vm.total === 0) {
         if (await saveOrder(key, paymentOrder)) state[key].stripeFreeOrder = true;
-        else state[key].stripeError = 'We could not save your order. Please contact DukeDrop before continuing.';
+        else state[key].stripeError = 'We could not save your order. Please contact DevilDrop before continuing.';
         state[key].paymentBusy = false; render(); return;
       }
       try {
@@ -738,13 +738,13 @@ if (typeof document !== 'undefined') {
       }
       if (state[key].saved) return true;
       const response = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
-      if (!response.ok) throw new Error('Order could not be saved. Please contact DukeDrop.');
+      if (!response.ok) throw new Error('Order could not be saved. Please contact DevilDrop.');
       const saved = await response.json();
       state[key].savedOrder = { ...o, orderId: saved.id, checkoutToken: saved.checkoutToken };
       state[key].saved = true;
       return true;
     } catch {
-      state[key].saveError = 'We could not save your order. Please contact DukeDrop before paying.';
+      state[key].saveError = 'We could not save your order. Please contact DevilDrop before paying.';
       return false;
     }
   }

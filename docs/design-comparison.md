@@ -14,7 +14,7 @@ live via MCP — not a locally re-used prior download. Three files were read:
   came from.
 - `doc-page.js` / `support.js` — both generated design-tool scaffolding
   (a generic print-pagination web component and a React-based template
-  runtime for `<x-dc>` documents). Neither has any DukeDrop-specific logic;
+  runtime for `<x-dc>` documents). Neither has any DevilDrop-specific logic;
   neither is vendored into the app. The design's actual business logic (the
   `Component` class body) was hand-ported into `app.js` as plain functions.
 

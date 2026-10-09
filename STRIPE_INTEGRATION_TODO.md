@@ -12,9 +12,9 @@ Stripe checkout stays unavailable on the storefront until its server and publish
 | `STRIPE_SECRET_KEY` | Not configured | Set the test secret key for local/test mode and the live secret key in production. Keep it server-only. |
 | `STRIPE_PUBLISHABLE_KEY` | Not configured | Set the matching publishable key. This value is returned by `/api/config` for Stripe.js. |
 | `STRIPE_PRICE_ID` / `line_items[0].price` | `price_...` | Set a Stripe Price ID whose active USD one-time amount equals the order total. The endpoint checks the amount and refuses mismatches. |
-| `mode` | `payment` | This is set for DukeDrop's one-time orders. Change it only if the product becomes recurring. |
+| `mode` | `payment` | This is set for DevilDrop's one-time orders. Change it only if the product becomes recurring. |
 
-**Important pricing limitation:** DukeDrop totals vary by service, quantity, tier, and promo code. One fixed Stripe Price cannot cover every order total. Before enabling card checkout, replace the single `STRIPE_PRICE_ID` lookup with a server-side map of exact totals to Price IDs or create a `price_data` line item from the server-calculated total. Keep the amount check so a checkout can never charge a different amount from the order summary. Zero-dollar orders are saved without Stripe Checkout.
+**Important pricing limitation:** DevilDrop totals vary by service, quantity, tier, and promo code. One fixed Stripe Price cannot cover every order total. Before enabling card checkout, replace the single `STRIPE_PRICE_ID` lookup with a server-side map of exact totals to Price IDs or create a `price_data` line item from the server-calculated total. Keep the amount check so a checkout can never charge a different amount from the order summary. Zero-dollar orders are saved without Stripe Checkout.
 
 ## Configured Parameters
 

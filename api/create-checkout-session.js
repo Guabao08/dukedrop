@@ -47,7 +47,7 @@ export default async function handler(req, res) {
       client_reference_id: order.id,
       metadata: { order_id: order.id },
       payment_intent_data: { metadata: { order_id: order.id } },
-      line_items: [{ price_data: { currency: 'usd', unit_amount: Math.round(expectedTotal * 100), product_data: { name: `DukeDrop ${order.service === 'bigdrop' ? 'Big Drop' : order.service} service`, description: `${order.quantity} package${order.quantity === 1 ? '' : 's'}` } }, quantity: 1 }],
+      line_items: [{ price_data: { currency: 'usd', unit_amount: Math.round(expectedTotal * 100), product_data: { name: `DevilDrop ${order.service === 'bigdrop' ? 'Big Drop' : order.service} service`, description: `${order.quantity} package${order.quantity === 1 ? '' : 's'}` } }, quantity: 1 }],
     });
     if (!session.client_secret) return res.status(502).json({ error: 'Stripe did not return a Checkout client secret.' });
     await capturePosthog('card_checkout_started', {

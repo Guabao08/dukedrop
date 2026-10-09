@@ -1,4 +1,4 @@
-# DukeDrop Twilio setup
+# DevilDrop Twilio setup
 
 The code is implemented locally. Nothing sends until the database migration,
 Twilio sender, server secrets, and production deployment are configured.
@@ -12,15 +12,15 @@ Twilio sender, server secrets, and production deployment are configured.
    the legal entity in Twilio's Console, create a Messaging Service, add the
    number to its Sender Pool, and register the order-follow-up Campaign. Wait
    until the Campaign **and number** show approved/registered before testing.
-   If DukeDrop has an EIN, use Twilio's Standard or Low-Volume Standard path;
+   If DevilDrop has an EIN, use Twilio's Standard or Low-Volume Standard path;
    otherwise review its Sole Proprietor path. Do not guess the entity type.
 3. In the Campaign form, describe this as one non-marketing order-fulfillment
-   follow-up. The opt-in is the unchecked checkbox on the DukeDrop order form.
+   follow-up. The opt-in is the unchecked checkbox on the DevilDrop order form.
    Link the public `/privacy.html` and `/terms.html` pages. Supply the actual
    opt-in wording and these two sample texts (replace bracketed fields):
 
-   - `Hi [name], DukeDrop: Order #[order]. Send your tracking number and estimated delivery date (YYYY-MM-DD). Reply STOP to opt out.`
-   - `Hi [name], DukeDrop: Order #[order]. Send your Amazon shipping/tracking link and estimated delivery date (YYYY-MM-DD). Reply STOP to opt out.`
+   - `Hi [name], DevilDrop: Order #[order]. Send your tracking number and estimated delivery date (YYYY-MM-DD). Reply STOP to opt out.`
+   - `Hi [name], DevilDrop: Order #[order]. Send your Amazon shipping/tracking link and estimated delivery date (YYYY-MM-DD). Reply STOP to opt out.`
 
 Twilio also offers toll-free senders, but those require their own verification
 before US/Canada texting. See [A2P 10DLC](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc),

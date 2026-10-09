@@ -3,9 +3,9 @@ import { cp, mkdir, rm } from 'node:fs/promises';
 const output = new URL('./dist/', import.meta.url);
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
-for (const file of ['favicon.svg', 'index.html', 'faq.html', 'terms.html', 'privacy.html', 'app.js', 'posthog-init.js', 'promo-rules.js', 'styles.css']) {
+for (const file of ['devildrop-logo.png', 'favicon.svg', 'index.html', 'faq.html', 'terms.html', 'privacy.html', 'app.js', 'posthog-init.js', 'promo-rules.js', 'styles.css']) {
   await cp(new URL(`./${file}`, import.meta.url), new URL(`./${file}`, output));
 }
 await cp(new URL('./dashboard/', import.meta.url), new URL('./dashboard/', output), { recursive: true });
 await cp(new URL('./videos/', import.meta.url), new URL('./videos/', output), { recursive: true });
-console.log('DukeDrop: built dist/');
+console.log('DevilDrop: built dist/');
