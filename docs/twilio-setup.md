@@ -15,9 +15,21 @@ Twilio sender, server secrets, and production deployment are configured.
    If DevilDrop has an EIN, use Twilio's Standard or Low-Volume Standard path;
    otherwise review its Sole Proprietor path. Do not guess the entity type.
 3. In the Campaign form, describe this as one non-marketing order-fulfillment
-   follow-up. The opt-in is the unchecked checkbox on the DevilDrop order form.
-   Link the public `/privacy.html` and `/terms.html` pages. Supply the actual
-   opt-in wording and these two sample texts (replace bracketed fields):
+   follow-up. The only opt-in path is the unchecked checkbox on the public
+   DevilDrop order form at `https://dukedrop.store/#app`. Customers enter their
+   phone number, then may check this optional box (it is unchecked by default):
+
+   > DevilDrop may text me once after payment to request shipping details and
+   > an estimated delivery date. Message and data rates may apply. Reply STOP
+   > to opt out or HELP for help.
+
+   State that consent is optional and not required to place an order, that the
+   program sends at most one transactional message per opted-in order, and that
+   it is generally sent 24–48 hours after payment is confirmed. There are no
+   keyword, verbal, paper, or other opt-in paths. Link the public
+   `https://dukedrop.store/privacy.html` and
+   `https://dukedrop.store/terms.html` pages. Supply these two sample texts
+   (replace bracketed fields):
 
    - `Hi [name], DevilDrop: Order #[order]. Send your tracking number and estimated delivery date (YYYY-MM-DD). Reply STOP to opt out.`
    - `Hi [name], DevilDrop: Order #[order]. Send your Amazon shipping/tracking link and estimated delivery date (YYYY-MM-DD). Reply STOP to opt out.`
