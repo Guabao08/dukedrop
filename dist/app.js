@@ -38,9 +38,9 @@ export const SERVICE_DETAILS = {
     eyebrow: 'Pickup',
     title: 'Pickup',
     rateHeader: 'Packages per trip',
-    intro: 'We grab it from your mailroom box or locker — third-party pickup, delivered straight to your dorm.',
+    intro: 'We pick up your Amazon package from a Whole Foods pickup counter or an Amazon Locker on campus, then bring it to your dorm.',
     memoPrefix: 'PICKUP',
-    callout: 'Mailroom pickups need your OK on file — text us the consent line before paying. Locker codes already work as consent, so lockers skip straight to paying.',
+    callout: 'Pickup is only available for Amazon packages held at a Whole Foods pickup counter or an Amazon Locker on campus. Have the Amazon pickup code ready.',
     unit: 'package',
     sizeLimitNote: SIZE_LIMIT_NOTE,
     tiers: [
@@ -68,9 +68,9 @@ export const SERVICE_DETAILS = {
     eyebrow: 'Big Drop',
     title: 'Big Drop',
     rateHeader: 'Items per order',
-    intro: 'Furniture, TVs, microwaves, chairs — anything too big for Express, Pickup, or Returns. Ship it to us and we bring it to your dorm, or we grab it from your mailroom or locker.',
+    intro: 'Furniture, TVs, microwaves, chairs — anything too big for Express, Pickup, or Returns. Ship it to us and we bring it to your dorm, or we pick it up from an eligible Amazon location.',
     memoPrefix: 'BIGDROP',
-    callout: 'For big/bulky items only — furniture, TVs, microwaves, chairs, and similar. Mailroom pickups still need consent on file.',
+    callout: 'For big/bulky items only — furniture, TVs, microwaves, chairs, and similar. Pickup is limited to Amazon packages at a Whole Foods pickup counter or an Amazon Locker on campus.',
     unit: 'item',
     highlight: true,
     tiers: [
@@ -133,9 +133,9 @@ export function buildMemo({ service, quantity, dorm, room, carrier, tracking, so
     if (carrier || lines.length) memo += ` — ${carrier || '[Carrier]'} tracking: ${lines.join(', ') || '[Tracking #]'}`;
   }
   if (isPickupStyle(service, mode)) {
-    memo += source === 'locker'
-      ? ` — ${lockerLocation || '[Locker location]'} locker: ${locker || '[Locker code]'}`
-      : ` — ${mailroom || '[Mailroom]'} mailroom, Box #${box || '[Box #]'}, Name: ${name || '[Full name]'}`;
+    const pickupLocation = lockerLocation || mailroom || '[Amazon pickup location]';
+    const pickupCode = locker || box || '[Amazon pickup code]';
+    memo += ` — ${source === 'campus-locker' ? 'Amazon Locker' : 'Whole Foods Amazon pickup'}: ${pickupLocation}, code ${pickupCode}`;
   }
   return memo;
 }
@@ -190,14 +190,9 @@ export function validateOrder(o) {
     }
   }
   if (isPickupStyle(o.service, o.mode)) {
-    if (o.source === 'locker') {
-      if (!String(o.lockerLocation ?? '').trim()) missing.push('which locker (building)');
-      if (!/^\d{6}$/.test(String(o.locker ?? '').trim())) missing.push('6-digit locker code');
-    } else {
-      if (!String(o.mailroom ?? '').trim()) missing.push('which mailroom (building)');
-      if (!String(o.box ?? '').trim()) missing.push('Duke box #');
-      if (!String(o.name ?? '').trim()) missing.push('your name');
-    }
+    if (!['whole-foods', 'campus-locker'].includes(o.source)) missing.push('Amazon pickup type');
+    if (!String(o.lockerLocation ?? o.mailroom ?? '').trim()) missing.push('Amazon pickup location');
+    if (!String(o.locker ?? o.box ?? '').trim()) missing.push('Amazon pickup code');
   }
   return { valid: missing.length === 0, missing };
 }
@@ -260,7 +255,7 @@ if (typeof document !== 'undefined') {
   const makeServiceState = (service) => ({
     qty: 1, dorm: '', room: '', carrier: '', tracking: '', retailer: 'other', smsOptIn: false, payMethod: 'venmo', paymentBusy: false, saveError: '',
     stripeClientSecret: '', stripeError: '', stripeFreeOrder: false,
-    ...(service === 'pickup' || service === 'bigdrop' ? { source: 'mailbox', mailroom: '', box: '', lockerLocation: '', locker: '', name: '' } : {}),
+    ...(service === 'pickup' || service === 'bigdrop' ? { source: 'whole-foods', mailroom: '', box: '', lockerLocation: '', locker: '', name: '' } : {}),
     size: 'standard',
     ...(service === 'bigdrop' ? { mode: 'ship' } : {}),
   });
@@ -284,7 +279,8 @@ if (typeof document !== 'undefined') {
     if (s.savedOrder) return s.savedOrder;
     const service = s.size === 'bigdrop' ? 'bigdrop' : key;
     const promoCode = isPromoEligible(state.promoCode, s) ? state.promoCode : '';
-    return { service, baseService: key, orderSize: s.size, quantity: s.qty, dorm: s.dorm, room: s.room, phone: s.phone || '', carrier: s.carrier, tracking: s.tracking, retailer: s.retailer, smsOptIn: s.smsOptIn, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name, mode: s.mode, promoCode, payMethod: s.payMethod };
+    const pickupStyle = isPickupStyle(service, s.mode);
+    return { service, baseService: key, orderSize: s.size, quantity: s.qty, dorm: s.dorm, room: s.room, phone: s.phone || '', carrier: s.carrier, tracking: s.tracking, retailer: pickupStyle ? 'amazon' : s.retailer, smsOptIn: s.smsOptIn, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name, mode: s.mode, promoCode, payMethod: s.payMethod };
   }
 
   function buildVM(key) {
@@ -298,14 +294,13 @@ if (typeof document !== 'undefined') {
     const total = calculateOrderTotal(service, s.qty, o.promoCode);
     const v = validateOrder(o);
     const pickupStyle = key === 'pickup';
-    const isLocker = pickupStyle && s.source === 'locker';
-    const showConsent = pickupStyle && !isLocker;
-    const consentText = showConsent ? buildConsent(s.name, s.mailroom) : '';
+    const showConsent = false;
+    const consentText = '';
     return {
       key, detail, tierIndex, total, subText: promoPercent ? `${s.qty} × ${money(tier.rate)} · ${promoPercent}% off (${money(subtotal)} → ${money(total)})` : `${s.qty} × ${money(tier.rate)}`,
       promoPercent, promoEntered: state.promoCode.trim(), promoHint: promoMessage(state.promoCode, s),
       memo: buildMemo(o), venmoNote: venmoNote(o), ready: v.valid, missing: v.missing,
-      isLocker, showConsent, consentText, pickupStyle,
+      showConsent, consentText, pickupStyle,
       requests: (() => { try { return splitPaymentRequests(o); } catch { return []; } })(),
       zelleLine: zelleLine(o),
     };
@@ -317,7 +312,7 @@ if (typeof document !== 'undefined') {
       <div class="tabs" aria-label="Order service">${['express', 'pickup', 'returns'].map((k) =>
         `<button type="button" class="tab${state.active === k ? ' active' : ''}" data-action="tab" data-service="${k}">${SERVICE_DETAILS[k].title}</button>`
       ).join('')}</div>
-      <div class="toggle-row" aria-label="Order size"><button type="button" class="tab${!isBigDrop ? ' active' : ''}" data-action="size" data-size="standard">Normal size</button><button type="button" class="tab${isBigDrop ? ' active' : ''}" data-action="size" data-size="bigdrop">Big Drop</button></div>`;
+      <div class="toggle-row" aria-label="Order size"${state.active === 'pickup' ? ' hidden' : ''}><button type="button" class="tab${!isBigDrop ? ' active' : ''}" data-action="size" data-size="standard">Normal size</button><button type="button" class="tab${isBigDrop ? ' active' : ''}" data-action="size" data-size="bigdrop">Big Drop</button></div>`;
   }
 
   function bannerHtml(key) {
@@ -364,21 +359,16 @@ if (typeof document !== 'undefined') {
   function sourceToggleHtml(key) {
     const s = state[key];
     if (key !== 'pickup') return '';
-    const isLocker = s.source === 'locker';
+    const isLocker = s.source === 'campus-locker';
     return `
       <div class="toggle-row">
-        <button type="button" class="tab${!isLocker ? ' active' : ''}" data-action="source" data-source="mailbox">Mailroom box</button>
-        <button type="button" class="tab${isLocker ? ' active' : ''}" data-action="source" data-source="locker">Locker</button>
+        <button type="button" class="tab${!isLocker ? ' active' : ''}" data-action="source" data-source="whole-foods">Whole Foods · Amazon pickup</button>
+        <button type="button" class="tab${isLocker ? ' active' : ''}" data-action="source" data-source="campus-locker">Amazon Locker · campus</button>
       </div>
-      ${isLocker ? `
       <div class="field-grid">
-        <label>Which locker (building)<input type="text" placeholder="e.g. Bell Tower" value="${esc(s.lockerLocation)}" data-field="lockerLocation"></label>
-        <label>Locker code (6 digits)<input type="text" inputmode="numeric" maxlength="6" placeholder="e.g. 447128" value="${esc(s.locker)}" data-field="locker"></label>
-      </div>` : `
-      <div class="field-grid">
-        <label>Which mailroom (building)<input type="text" placeholder="e.g. Few Quad" value="${esc(s.mailroom)}" data-field="mailroom"></label>
-        <label>Duke box #<input type="text" placeholder="e.g. 90123" value="${esc(s.box)}" data-field="box"></label>
-      </div>`}`;
+        <label>${isLocker ? 'Which campus Amazon Locker?' : 'Which Whole Foods pickup location?'}<input type="text" placeholder="${isLocker ? 'e.g. Bryan Center' : 'e.g. Durham' }" value="${esc(s.lockerLocation)}" data-field="lockerLocation"></label>
+        <label>Amazon pickup code<input type="text" placeholder="Enter the code from Amazon" value="${esc(s.locker)}" data-field="locker"></label>
+      </div>`;
   }
 
   function consentHtml(key, vm) {
@@ -409,7 +399,7 @@ if (typeof document !== 'undefined') {
         const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         // Keep a real link for browsers that block the automatic app handoff
         // after the asynchronous order save.
-        return `<div class="fallback"><strong>Order saved · ready to pay</strong><p>Pay <strong>@${VENMO_USERNAME}</strong> exactly <strong>${money(Number(payment.amount))}</strong>. Copy the note below before opening Venmo.</p><div class="fallback-mono" data-role="venmo-note">${esc(payment.note)}</div><button type="button" class="copy-btn" data-action="copy" data-value-role="venmo-note">Copy payment note</button><button type="button" class="copy-btn" data-action="copy" data-value="${esc(payment.recipient)}">Copy recipient</button><button type="button" class="copy-btn" data-action="copy" data-value="${esc(payment.amount)}">Copy amount</button><a class="btn-pay venmo-profile-link" href="${esc(mobile ? payment.appUrl : payment.paymentUrl)}">${mobile ? 'Open Venmo app' : 'Continue to Venmo'} <span aria-hidden="true">↗</span></a><p>If the payment details are not filled in, paste the recipient, amount, and note above. Check all three before paying.</p><p><a href="${payment.profileUrl}">Open @${VENMO_USERNAME}’s Venmo profile</a> if the app link does not open. In an Instagram or other in-app browser, open this page in Safari or Chrome first.</p><p>Send one payment for this order. Payment is confirmed after DukeDrop matches it to the payment sheet.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
+        return `<div class="fallback"><strong>Order saved · ready to pay</strong><p>Pay <strong>@${VENMO_USERNAME}</strong> exactly <strong>${money(Number(payment.amount))}</strong>. Copy the note below before opening Venmo.</p><div class="fallback-mono" data-role="venmo-note">${esc(payment.note)}</div><button type="button" class="copy-btn" data-action="copy" data-value-role="venmo-note">Copy payment note</button><button type="button" class="copy-btn" data-action="copy" data-value="${esc(payment.recipient)}">Copy recipient</button><button type="button" class="copy-btn" data-action="copy" data-value="${esc(payment.amount)}">Copy amount</button><a class="btn-pay venmo-profile-link" href="${esc(mobile ? payment.appUrl : payment.paymentUrl)}">${mobile ? 'Open Venmo app' : 'Continue to Venmo'} <span aria-hidden="true">↗</span></a><p>If the payment details are not filled in, paste the recipient, amount, and note above. Check all three before paying.</p><p><a href="${payment.profileUrl}">Open @${VENMO_USERNAME}’s Venmo profile</a> if the app link does not open. In an Instagram or other in-app browser, open this page in Safari or Chrome first.</p><p>Send one payment for this order. Payment is confirmed after DevilDrop matches it to the payment sheet.</p><button type="button" class="text-button" data-action="new-order">Start a new order</button></div>`;
       }
       return `<button type="button" class="btn-pay" data-action="pay-venmo" ${vm.ready && !s.paymentBusy ? '' : 'disabled'}>${label}</button>`;
     }
@@ -452,8 +442,8 @@ if (typeof document !== 'undefined') {
         </div>
         <label>Phone number<input type="tel" inputmode="tel" autocomplete="tel" placeholder="e.g. (919) 555-0123" value="${esc(s.phone || '')}" data-field="phone" required></label>
         ${sourceToggleHtml(key)}
-        ${key !== 'returns' ? `<div class="tracking-fields"><label>Ordered from<select data-field="retailer"><option value="other"${s.retailer === 'other' ? ' selected' : ''}>Another store</option><option value="amazon"${s.retailer === 'amazon' ? ' selected' : ''}>Amazon</option></select></label><label>Carrier (if known)<input type="text" placeholder="e.g. UPS, USPS, FedEx, DHL" value="${esc(s.carrier)}" data-field="carrier"></label><label>Tracking/order numbers (if available)<span class="field-hint">If you opt in below, we’ll text 24–48 hours after payment to confirm shipping details and estimated delivery.</span><textarea rows="3" placeholder="Enter tracking/order number if available" data-field="tracking"></textarea></label></div>` : ''}
-        ${key !== 'returns' ? `<label class="sms-opt-in"><input type="checkbox" data-field="smsOptIn" ${s.smsOptIn ? 'checked' : ''}> DukeDrop may text me once after payment to request shipping details and an estimated delivery date. Message and data rates may apply. Reply STOP to opt out or HELP for help.</label>` : ''}
+        ${key !== 'returns' ? `<div class="tracking-fields">${key === 'pickup' && (s.size !== 'bigdrop' || s.mode === 'pickup') ? '<div class="field-hint">Amazon package pickup</div>' : `<label>Ordered from<select data-field="retailer"><option value="other"${s.retailer === 'other' ? ' selected' : ''}>Another store</option><option value="amazon"${s.retailer === 'amazon' ? ' selected' : ''}>Amazon</option></select></label>`}<label>Carrier (if known)<input type="text" placeholder="e.g. UPS, USPS, FedEx, DHL" value="${esc(s.carrier)}" data-field="carrier"></label><label>Tracking/order numbers (if available)<span class="field-hint">If you opt in below, we’ll text 24–48 hours after payment to confirm shipping details and estimated delivery.</span><textarea rows="3" placeholder="Enter tracking/order number if available" data-field="tracking"></textarea></label></div>` : ''}
+        ${key !== 'returns' ? `<label class="sms-opt-in"><input type="checkbox" data-field="smsOptIn" ${s.smsOptIn ? 'checked' : ''}> DevilDrop may text me once after payment to request shipping details and an estimated delivery date. Message and data rates may apply. Reply STOP to opt out or HELP for help.</label>` : ''}
         ${consentHtml(key, vm)}
         <label>Promo code (optional)
           <input type="text" placeholder="Enter promo code" value="${esc(state.promoCode)}" data-field="promoCode" maxlength="64" autocapitalize="characters" autocorrect="off" spellcheck="false" aria-describedby="promo-code-hint">
@@ -669,15 +659,15 @@ if (typeof document !== 'undefined') {
       let checkoutRendered = false;
       if (vm.total === 0) {
         if (await saveOrder(key, paymentOrder)) state[key].stripeFreeOrder = true;
-        else state[key].stripeError = 'We could not save your order. Please contact DukeDrop before continuing.';
+        else state[key].stripeError = 'We could not save your order. Please contact DevilDrop before continuing.';
         state[key].paymentBusy = false; render(); return;
       }
       try {
-        const response = await fetch('/api/create-checkout-session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order: paymentOrder }) });
+        if (!await saveOrder(key, paymentOrder)) throw new Error(state[key].saveError || 'We could not save your order before checkout.');
+        const response = await fetch('/api/create-checkout-session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId: state[key].savedOrder?.orderId, checkoutToken: state[key].savedOrder?.checkoutToken }) });
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || 'Could not start Stripe checkout.');
         if (!body.client_secret) throw new Error('Stripe did not return a Checkout client secret.');
-        if (!await saveOrder(key, paymentOrder)) throw new Error('We could not save your order. Please contact DukeDrop before paying.');
         state[key].stripeClientSecret = body.client_secret;
         render();
         checkoutRendered = true;
@@ -730,13 +720,13 @@ if (typeof document !== 'undefined') {
       }
       if (state[key].saved) return true;
       const response = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
-      if (!response.ok) throw new Error('Order could not be saved. Please contact DukeDrop.');
+      if (!response.ok) throw new Error('Order could not be saved. Please contact DevilDrop.');
       const saved = await response.json();
-      state[key].savedOrder = { ...o, orderId: saved.id };
+      state[key].savedOrder = { ...o, orderId: saved.id, checkoutToken: saved.checkoutToken };
       state[key].saved = true;
       return true;
     } catch {
-      state[key].saveError = 'We could not save your order. Please contact DukeDrop before paying.';
+      state[key].saveError = 'We could not save your order. Please contact DevilDrop before paying.';
       return false;
     }
   }

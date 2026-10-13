@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stripe in DevilDrop — implementation walkthrough</title>
+<style>
+:root{--ink:#202b50;--accent:#2d47c2;--surface:#f6f4ef;--card:#fff;--border:#e0e2e9;--muted:#626778;--tint:#edf0fc;--good:#176b48;--warn:#875800;--sans:'Nunito Sans',ui-rounded,'Avenir Next',Arial,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--surface);color:var(--ink);font:16px/1.55 var(--sans)}
+main{width:min(100% - 36px,1000px);margin:40px auto 80px}
+header{padding:32px clamp(18px,5vw,54px);border-radius:26px;background:var(--ink);color:white}
+.kicker{font-size:12px;text-transform:uppercase;letter-spacing:.14em;color:#c8d0ff;font-weight:800}
+h1{font-size:clamp(32px,5vw,52px);line-height:1.05;letter-spacing:-.04em;margin:12px 0}
+header p{max-width:68ch;color:#e2e6fa;margin:0}
+section{margin-top:26px;background:var(--card);border:1px solid var(--border);border-radius:22px;padding:clamp(18px,3vw,30px);min-width:0}
+h2{font-size:24px;line-height:1.2;margin:0 0 12px;letter-spacing:-.025em}
+h3{font-size:17px;margin:0 0 6px}
+p{margin:8px 0 12px;color:#414c69}
+small,.muted{color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.grid>*{min-width:0}
+.card{padding:16px;border:1px solid var(--border);border-radius:15px;background:#fff}
+.tag{display:inline-block;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:800;background:var(--tint);color:var(--accent);margin-bottom:8px}
+.tag.warn{background:#fff1d8;color:var(--warn)}
+.tag.good{background:#e2f4e9;color:var(--good)}
+ol{padding-left:24px;margin:14px 0}
+li{padding:0 0 12px 4px;color:#414c69}
+li strong{color:var(--ink)}
+code{font: .91em ui-monospace,SFMono-Regular,Menlo,monospace;background:#f2f3f8;border-radius:5px;padding:2px 5px;overflow-wrap:anywhere}
+.flow{margin-top:18px;padding:16px;border-radius:14px;background:var(--tint);overflow:auto}
+.mermaid{min-width:0}
+table{width:100%;border-collapse:collapse;table-layout:fixed;margin-top:12px}
+th,td{text-align:left;vertical-align:top;padding:10px;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.sources a{color:var(--accent);overflow-wrap:anywhere}
+.callout{padding:15px 17px;border-left:4px solid var(--accent);border-radius:8px;background:#f5f6fd;margin-top:14px}
+@media(max-width:680px){main{width:min(100% - 20px,1000px);margin:10px auto 48px}.grid{grid-template-columns:minmax(0,1fr)}table{font-size:14px}th,td{padding:8px 6px}}
+</style>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.esm.min.mjs';
+const dark=matchMedia('(prefers-color-scheme: dark)').matches;
+mermaid.initialize({startOnLoad:true,theme:dark?'dark':'default',securityLevel:'strict'});
+</script>
+</head>
+<body><main>
+<header>
+<div class="kicker">DevilDrop · Stripe checkout</div>
+<h1>A step by step implementation path</h1>
+<p>The app already has the core Stripe path: order creation, server-calculated Checkout Sessions, an embedded form, and a signed webhook that can mark an order paid. This guide shows how to finish, verify, and launch that path safely.</p>
+</header>
+<section>
+<h2>Where the app stands</h2>
+<div class="grid">
+<div class="card"><span class="tag good">Already in code</span><h3>Order & amount</h3><p><code>api/orders.js</code> calculates totals on the server and saves the order. The checkout endpoint recalculates the amount from saved order data and creates the Checkout Session with inline <code>price_data</code>; there is no fixed Stripe Price ID to configure.</p></div>
+<div class="card"><span class="tag good">Already in code</span><h3>Payment confirmation</h3><p><code>api/stripe-webhook.js</code> verifies Stripe’s signature against the raw request body, checks the saved order and amount, and conditionally marks it paid.</p></div>
+<div class="card"><span class="tag good">Already in code</span><h3>Browser flow</h3><p><code>app.js</code> saves the order first, requests the client secret from the server, then mounts and confirms Stripe’s form. The secret key stays server-side.</p></div>
+<div class="card"><span class="tag warn">Decision before launch</span><h3>Checkout interface</h3><p>The current code uses Stripe’s custom Checkout Form preview beta and a preview API version. Confirm the preview’s production terms and support expectations in the Stripe account. For the lowest maintenance, consider Stripe-hosted Checkout or stable embedded Checkout instead.</p></div>
+</div>
+<div class="callout"><strong>Ignore the stale setup steps in <code>STRIPE_INTEGRATION_TODO.md</code></strong> that ask for a fixed Price ID or say there is no webhook. Those statements don’t match the current endpoint code.</div>
+<div class="flow"><div class="mermaid">
+flowchart TD
+  A["Customer completes DevilDrop order"] --> B["POST /api/orders"]
+  B --> C["Server recalculates total and saves order"]
+  C --> D["POST /api/create-checkout-session with order ID + signed token"]
+  D --> E["Server verifies saved order and creates Checkout Session"]
+  E --> F["Browser mounts Stripe form with client secret"]
+  F --> G["Customer confirms payment with Stripe"]
+  G --> H["Stripe sends signed event to /api/stripe-webhook"]
+  H --> I["Webhook validates paid status + amount"]
+  I --> J["Order becomes paid in Supabase"]
+</div></div>
+</section>
+<section>
+<h2>Implement and verify it in this order</h2>
+<ol>
+<li><strong>Choose the Checkout UI.</strong> Decide whether to keep the custom form preview already in <code>index.html</code>, <code>app.js</code>, and <code>api/create-checkout-session.js</code>, or move to stable embedded/hosted Checkout. If staying on preview, pin and verify its Stripe API/JS version in test mode, then explicitly confirm its launch support status with Stripe.</li>
+<li><strong>Keep pricing authoritative on the server.</strong> Preserve <code>totalFor()</code> in <code>api/orders.js</code> and the second total check in <code>api/create-checkout-session.js</code>. Never accept an amount or discount from the browser as the amount to charge. Keep zero-dollar orders out of Checkout, as the current UI does.</li>
+<li><strong>Set up separate test and live secrets.</strong> In local environment and Vercel, configure <code>STRIPE_SECRET_KEY</code>, <code>STRIPE_PUBLISHABLE_KEY</code>, and <code>STRIPE_WEBHOOK_SECRET</code>, plus <code>ORDER_STORAGE_ENABLED=true</code>, <code>SUPABASE_URL</code>, and <code>SUPABASE_SERVICE_ROLE_KEY</code>. Use matching test keys locally and matching live keys in production. Only the publishable key may be returned by <code>/api/config</code>; keep secrets out of source control and browser code.</li>
+<li><strong>Register the webhook in Stripe test mode.</strong> Point it at <code>https://&lt;your-test-host&gt;/api/stripe-webhook</code> (or forward Stripe CLI events to local dev). Subscribe to <code>checkout.session.completed</code>. If you allow delayed payment methods, also handle their async success and failure lifecycle. Copy that endpoint’s <code>whsec_...</code> into <code>STRIPE_WEBHOOK_SECRET</code>; each endpoint/environment has its own secret.</li>
+<li><strong>Decide which methods are enabled.</strong> The UI offers “Card” only. Restrict Checkout to card if that is the intended promise, or make sure all methods enabled in Stripe Dashboard have correct pending, asynchronous success, and failure handling. The current webhook handles completed and async success, but doesn’t record async failure for dashboard/customer messaging.</li>
+<li><strong>Prevent duplicate sessions.</strong> The browser disables controls while starting checkout, but a retry or second request can still create another session for one order. Add a server-side Stripe idempotency key derived from the saved order ID, and consider persisting the Checkout Session ID so support can find the exact attempt.</li>
+<li><strong>Test the complete journey in test mode.</strong> Place one order for each service, quantity tier, and promo case; verify the Stripe amount equals the displayed and saved amount. Test successful card payment, a declined card, 3DS authentication, refresh/retry, duplicate webhook delivery, invalid webhook signature, and a zero-dollar order. Confirm the order changes to paid only after Stripe’s webhook succeeds. The browser success message currently says staff will confirm; update it to match automatic webhook confirmation.</li>
+<li><strong>Reconcile and monitor.</strong> Confirm the Stripe Dashboard shows the test payment and webhook delivery. Add a way to spot payments where Stripe says “paid” but the database update failed, such as retry monitoring and a daily reconciliation/support procedure. Check that refunds in Stripe are reflected in the app; today webhook code doesn’t handle refund events.</li>
+<li><strong>Launch live with a small verification.</strong> Add a separate live webhook endpoint and live secrets, deploy, make a small real payment, verify it in Stripe and the dashboard, then refund it. Make sure refunds and customer support procedures are ready before promoting card checkout.</li>
+</ol>
+</section>
+<section>
+<h2>Known gaps to close before calling it production ready</h2>
+<table><thead><tr><th>Area</th><th>Current behavior</th><th>Next action</th></tr></thead><tbody>
+<tr><td>Duplicate Checkout Session creation</td><td>Each valid request can create a new Stripe Session.</td><td>Add Stripe API idempotency per order and persist the session identifier if useful for support.</td></tr>
+<tr><td>Payment method outcomes</td><td>Webhook handles completed and async success, then checks <code>payment_status === 'paid'</code>.</td><td>Restrict to card or handle async failure/pending paths explicitly.</td></tr>
+<tr><td>Refund lifecycle</td><td>Dashboard supports a refunded status, but Stripe webhook doesn’t process refunds.</td><td>Add a refund reconciliation path and test partial vs full refund policy.</td></tr>
+<tr><td>Customer-facing receipt/status</td><td>Form says staff will confirm, while webhook can mark payment paid automatically.</td><td>Make success, failure, refresh, and retry messages match the server-of-record behavior.</td></tr>
+<tr><td>Webhook reliability</td><td>Signature validation and conditional update are present; no event ledger or alert is visible.</td><td>Monitor failed deliveries and reconcile unmatched/mismatched Stripe payments.</td></tr>
+</tbody></table>
+</section>
+<section class="sources">
+<h2>Useful references</h2>
+<p><a href="https://docs.stripe.com/payments/checkout/quickstarts">Stripe Checkout quickstarts</a> compare hosted Checkout and embedded forms. <a href="https://docs.stripe.com/api/idempotent_requests">Stripe idempotent requests</a> explain safe retries. <a href="https://docs.stripe.com/testing">Stripe testing</a> covers test cards and event testing.</p>
+<p class="muted">Code reviewed: <code>api/orders.js</code>, <code>api/create-checkout-session.js</code>, <code>api/stripe-webhook.js</code>, <code>app.js</code>, <code>index.html</code>, <code>lib/api-security.js</code>, and <code>supabase/schema.sql</code>. The Claude Design MCP named in AGENTS.md was not available in this session, so the live external UI spec could not be checked.</p>
+</section>
+</main></body></html>

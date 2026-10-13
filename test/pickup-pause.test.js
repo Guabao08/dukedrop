@@ -1,22 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isPickupUnavailable, PICKUP_UNAVAILABLE_MESSAGE } from '../app.js';
-import orders from '../api/orders.js';
+import { isValidOrder } from '../api/orders.js';
 
-test('pickup pause covers standard, Big Drop, and legacy pickup orders only', () => {
-  for (const order of [{ service: 'pickup' }, { service: 'bigdrop', baseService: 'pickup' }, { service: 'bigdrop', mode: 'pickup' }]) {
-    assert.equal(isPickupUnavailable(order), true);
-  }
-  for (const order of [{ service: 'express' }, { service: 'returns' }, { service: 'bigdrop', mode: 'ship' }, { service: 'bigdrop', baseService: 'returns' }]) {
-    assert.equal(isPickupUnavailable(order), false);
-  }
-});
-
-test('new pickup orders are rejected before storage or payment side effects', async () => {
-  for (const body of [{ service: 'pickup' }, { service: 'bigdrop', baseService: 'pickup' }, { service: 'bigdrop', mode: 'pickup' }]) {
-    const res = { status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } };
-    await orders({ method: 'POST', body }, res);
-    assert.equal(res.code, 503);
-    assert.equal(res.body.error, PICKUP_UNAVAILABLE_MESSAGE);
+test('server accepts only the two Amazon pickup types for Pickup and Big Drop pickup', () => {
+  const base = { quantity: 1, dorm: 'A', room: '1', phone: '9195550123' };
+  for (const serviceOrder of [
+    { service: 'pickup' },
+    { service: 'bigdrop', mode: 'pickup' },
+  ]) {
+    assert.equal(isValidOrder({ ...base, ...serviceOrder, source: 'whole-foods', lockerLocation: 'Durham', locker: 'AB12CD' }), true);
+    assert.equal(isValidOrder({ ...base, ...serviceOrder, source: 'campus-locker', lockerLocation: 'Bryan Center', locker: '447128' }), true);
+    assert.equal(isValidOrder({ ...base, ...serviceOrder, source: 'mailbox', mailroom: 'Few', box: '9' }), false);
+    assert.equal(isValidOrder({ ...base, ...serviceOrder, source: 'whole-foods', lockerLocation: 'Durham' }), false);
   }
 });

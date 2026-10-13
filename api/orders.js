@@ -1,5 +1,4 @@
 import { syncTracking } from '../lib/carrier-tracking.js';
-import { isPickupUnavailable, PICKUP_UNAVAILABLE_MESSAGE } from '../app.js';
 import { checkoutToken, consumeRateLimit } from '../lib/api-security.js';
 import { capturePosthog } from '../lib/posthog.js';
 import { flushPosthogLogs, logOrderCreated } from '../lib/posthog-logs.js';
@@ -17,7 +16,10 @@ function publicConfig(_req, res) {
 }
 
 export function isValidOrder(o) {
-  return o && allowedServices.has(o.service) && (!o.baseService || allowedBaseServices.has(o.baseService)) && Number.isInteger(o.quantity) && o.quantity >= 1 && o.quantity <= 50 &&
+  const pickupStyle = o && (o.service === 'pickup' || (o.service === 'bigdrop' && o.mode === 'pickup'));
+  const validPickup = !pickupStyle || (['whole-foods', 'campus-locker'].includes(o.source) &&
+    Boolean(String(o.lockerLocation || '').trim()) && Boolean(String(o.locker || '').trim()));
+  return o && allowedServices.has(o.service) && (!o.baseService || allowedBaseServices.has(o.baseService)) && validPickup && Number.isInteger(o.quantity) && o.quantity >= 1 && o.quantity <= 50 &&
     String(o.dorm || '').trim() && String(o.room || '').trim() && /^\+?[\d ()-]{7,20}$/.test(String(o.phone || '').trim()) &&
     (o.service === 'returns' || !String(o.tracking || '').trim() || String(o.carrier || '').trim()) &&
     isPromoEligible(o.promoCode, o);
@@ -31,7 +33,6 @@ export function totalFor(o) {
 export default async function handler(req, res) {
   if (req.method === 'GET') return publicConfig(req, res);
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-  if (isPickupUnavailable(req.body || {})) return res.status(503).json({ error: PICKUP_UNAVAILABLE_MESSAGE });
   if (process.env.ORDER_STORAGE_ENABLED !== 'true' || !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return res.status(503).json({ error: 'Order storage is not configured' });
   try {
     if (!await consumeRateLimit(req, 'order-create', 5, 600)) return res.status(429).json({ error: 'Too many order attempts. Please wait before trying again.' });

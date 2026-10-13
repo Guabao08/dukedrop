@@ -15,7 +15,7 @@ create table if not exists public.orders (
   phone text not null,
   carrier text,
   tracking text,
-  source text check (source is null or source in ('mailbox','locker')),
+  source text check (source is null or source in ('mailbox','locker','whole-foods','campus-locker')),
   mailroom text,
   box_number text,
   locker_location text,

@@ -127,25 +127,24 @@ test('shipping can be submitted before tracking exists; phone and known tracking
   assert.equal(validateOrder({ service: 'returns', quantity: 1, dorm: 'A', room: '1', phone: '9195550123' }).valid, true);
 });
 
-test('Pickup mailroom requires mailroom, box, and name; locker requires building and a 6-digit code', () => {
-  assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', tracking: 'T', source: 'mailbox' }).valid, false);
-  const mailboxMissing = validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', tracking: 'T', source: 'mailbox' }).missing;
-  assert.deepEqual(mailboxMissing, ['carrier', 'which mailroom (building)', 'Duke box #', 'your name']);
-  assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', carrier: 'FedEx', tracking: 'T', source: 'mailbox', mailroom: 'Few', box: '9', name: 'Jane' }).valid, true);
-  assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', tracking: 'T', source: 'locker', lockerLocation: 'Bell', locker: '12345' }).valid, false);
-  assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', carrier: 'DHL eCommerce', tracking: 'T', source: 'locker', lockerLocation: 'Bell', locker: '123456' }).valid, true);
+test('Pickup requires one of the two Amazon pickup types, a location, and a code', () => {
+  assert.deepEqual(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', phone: '9195550123' }).missing, ['Amazon pickup type', 'Amazon pickup location', 'Amazon pickup code']);
+  for (const source of ['whole-foods', 'campus-locker']) {
+    assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', source, lockerLocation: 'Durham', locker: 'AB12CD' }).valid, true);
+  }
+  assert.equal(validateOrder({ service: 'pickup', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', source: 'mailbox', mailroom: 'Few', box: '9' }).valid, false);
 });
 
 test('memo is service-specific: EXPRESS/RETURN/PICKUP prefixes and pickup source details', () => {
   assert.match(buildMemo({ service: 'express', quantity: 2, dorm: 'Randolph', room: '214', carrier: 'USPS', tracking: 'TBA1\nTBA2\nTBA1' }), /^EXPRESS 2x — Randolph 214 — USPS tracking: TBA1, TBA2$/);
   assert.match(buildMemo({ service: 'returns', quantity: 1, dorm: 'Few', room: '4', tracking: 'T' }), /^RETURN /);
   assert.match(
-    buildMemo({ service: 'pickup', quantity: 1, dorm: 'Few', room: '4', tracking: 'T', source: 'mailbox', mailroom: 'Few', box: '9', name: 'Jane' }),
-    /Few mailroom, Box #9, Name: Jane$/
+    buildMemo({ service: 'pickup', quantity: 1, dorm: 'Few', room: '4', tracking: 'T', source: 'whole-foods', lockerLocation: 'Durham', locker: 'AB12CD' }),
+    /Whole Foods Amazon pickup: Durham, code AB12CD$/
   );
   assert.match(
-    buildMemo({ service: 'pickup', quantity: 1, dorm: 'Few', room: '4', tracking: 'T', source: 'locker', lockerLocation: 'Bell', locker: '447128' }),
-    /Bell locker: 447128$/
+    buildMemo({ service: 'pickup', quantity: 1, dorm: 'Few', room: '4', tracking: 'T', source: 'campus-locker', lockerLocation: 'Bell', locker: '447128' }),
+    /Amazon Locker: Bell, code 447128$/
   );
   assert.doesNotMatch(buildMemo({ service: 'express', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', tracking: 'T' }), /[|+]/);
 });
@@ -169,7 +168,7 @@ test('consent SMS links address Messages and preserve the complete consent text'
 });
 
 test('Venmo payment details contain one total and use the stable profile handoff', () => {
-  const o = { service: 'pickup', quantity: 2, dorm: 'Few Quad', room: '4 A', phone: '9195550123', carrier: 'Royal Mail', tracking: '1&2 % special\nTBA2', source: 'mailbox', mailroom: 'Few', box: '9', name: 'Jane' };
+  const o = { service: 'pickup', quantity: 2, dorm: 'Few Quad', room: '4 A', phone: '9195550123', carrier: 'Royal Mail', tracking: '1&2 % special\nTBA2', source: 'whole-foods', lockerLocation: 'Durham', locker: 'AB12CD' };
   const link = venmoLink(o);
   assert.equal(link.amount, calculateAmount('pickup', 2).toFixed(2));
   const profileUrl = new URL(link.profileUrl);
@@ -264,13 +263,13 @@ test('Big Drop in ship mode accepts missing tracking for later follow-up', () =>
   assert.equal(buildMemo({ ...o, tracking: '', carrier: '' }), 'BIGDROP 1x — A 1');
 });
 
-test('Big Drop in pickup mode requires mailroom/locker fields just like Pickup', () => {
-  const missingMailroom = validateOrder({ service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', carrier: 'UPS', tracking: 'T', mode: 'pickup', source: 'mailbox' }).missing;
-  assert.deepEqual(missingMailroom, ['which mailroom (building)', 'Duke box #', 'your name']);
-  const ok = validateOrder({ service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', carrier: 'UPS', tracking: 'T', mode: 'pickup', source: 'mailbox', mailroom: 'Few', box: '9', name: 'Jane' });
+test('Big Drop in pickup mode accepts only eligible Amazon locations', () => {
+  const missingLocation = validateOrder({ service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', carrier: 'UPS', tracking: 'T', mode: 'pickup', source: 'mailbox' }).missing;
+  assert.deepEqual(missingLocation, ['Amazon pickup type', 'Amazon pickup location', 'Amazon pickup code']);
+  const ok = validateOrder({ service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', carrier: 'UPS', tracking: 'T', mode: 'pickup', source: 'whole-foods', lockerLocation: 'Durham', locker: 'AB12CD' });
   assert.equal(ok.valid, true);
   assert.match(
-    buildMemo({ service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', carrier: 'UPS', tracking: 'T', mode: 'pickup', source: 'locker', lockerLocation: 'Bell', locker: '447128' }),
-    /Bell locker: 447128$/
+    buildMemo({ service: 'bigdrop', quantity: 1, dorm: 'A', room: '1', phone: '9195550123', carrier: 'UPS', tracking: 'T', mode: 'pickup', source: 'campus-locker', lockerLocation: 'Bell', locker: '447128' }),
+    /Amazon Locker: Bell, code 447128$/
   );
 });

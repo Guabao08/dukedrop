@@ -16,11 +16,12 @@ export function pickupReadiness(order) {
   if (trackers.some(row => ['failure','return_to_sender','error','cancelled'].includes(row.status) || row.sync_error)) return result('hold', 'A shipment needs attention. Open the order to review the carrier status or tracking error.', 'Carrier tracking');
   if (delivered) return result('waiting', `${delivered} of ${order.quantity} items delivered. Waiting for the remaining items.`, 'Carrier tracking');
   const pickup = order.service === 'pickup' || (order.service === 'bigdrop' && order.fulfillment_mode === 'pickup');
-  if (pickup && order.source === 'locker' && /^\d{6}$/.test(String(order.locker_code || '').trim()) && String(order.locker_location || '').trim()) {
-    if (Number(order.quantity) === 1) return result('ready', 'Customer supplied a locker location and pickup code. Confirm the code is still valid.', 'Customer locker details');
-    return result('waiting', 'Locker details supplied. Confirm that all items are available before collecting.');
+  if (pickup && ['whole-foods', 'campus-locker'].includes(order.source) && String(order.locker_code || '').trim() && String(order.locker_location || '').trim()) {
+    const locationType = order.source === 'campus-locker' ? 'campus Amazon Locker' : 'Whole Foods Amazon pickup';
+    if (Number(order.quantity) === 1) return result('ready', `Customer supplied ${locationType} details and a pickup code. Confirm the code is still valid.`, 'Customer Amazon pickup details');
+    return result('waiting', `${locationType} details supplied. Confirm that all items are available before collecting.`);
   }
-  if (pickup) return result('waiting', 'Confirm the mailroom pickup notice or obtain valid locker details.');
+  if (pickup) return result('waiting', 'Confirm the Amazon pickup location and obtain a valid pickup code.');
   if (trackers.length) return result('waiting', `${trackers.reduce((sum, row) => sum + Number(row.items_count || 1), 0)} of ${order.quantity} items have tracking. Waiting for carrier delivery.`, 'Carrier tracking');
   if (!String(order.tracking || '').trim()) return result('waiting', 'Tracking number needed. Confirm arrival before collecting.');
   return result('waiting', 'Tracking details recorded. Add valid carrier tracking numbers below to enable delivery updates.');
@@ -29,7 +30,8 @@ export function pickupLocation(order) {
   const service = order.service === 'bigdrop' ? order.base_service : order.service;
   if (service === 'returns') return `${order.dorm || 'Dorm not provided'} · Room ${order.room || '—'}`;
   if (order.service === 'pickup' || (order.service === 'bigdrop' && order.fulfillment_mode === 'pickup')) {
-    return order.source === 'locker' ? order.locker_location || 'Locker location needed' : [order.mailroom || 'Mailroom not provided', order.box_number ? `Box ${order.box_number}` : ''].filter(Boolean).join(' · ');
+    const kind = order.source === 'campus-locker' ? 'Amazon Locker' : 'Whole Foods Amazon pickup';
+    return `${kind} · ${order.locker_location || 'Location needed'}${order.locker_code ? ` · Code ${order.locker_code}` : ''}`;
   }
   return 'Confirm arrival location';
 }

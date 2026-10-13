@@ -38,9 +38,9 @@ export const SERVICE_DETAILS = {
     eyebrow: 'Pickup',
     title: 'Pickup',
     rateHeader: 'Packages per trip',
-    intro: 'We grab it from your mailroom box or locker — third-party pickup, delivered straight to your dorm.',
+    intro: 'We pick up your Amazon package from a Whole Foods pickup counter or an Amazon Locker on campus, then bring it to your dorm.',
     memoPrefix: 'PICKUP',
-    callout: 'Mailroom pickups need your OK on file — text us the consent line before paying. Locker codes already work as consent, so lockers skip straight to paying.',
+    callout: 'Pickup is only available for Amazon packages held at a Whole Foods pickup counter or an Amazon Locker on campus. Have the Amazon pickup code ready.',
     unit: 'package',
     sizeLimitNote: SIZE_LIMIT_NOTE,
     tiers: [
@@ -68,9 +68,9 @@ export const SERVICE_DETAILS = {
     eyebrow: 'Big Drop',
     title: 'Big Drop',
     rateHeader: 'Items per order',
-    intro: 'Furniture, TVs, microwaves, chairs — anything too big for Express, Pickup, or Returns. Ship it to us and we bring it to your dorm, or we grab it from your mailroom or locker.',
+    intro: 'Furniture, TVs, microwaves, chairs — anything too big for Express, Pickup, or Returns. Ship it to us and we bring it to your dorm, or we pick it up from an eligible Amazon location.',
     memoPrefix: 'BIGDROP',
-    callout: 'For big/bulky items only — furniture, TVs, microwaves, chairs, and similar. Mailroom pickups still need consent on file.',
+    callout: 'For big/bulky items only — furniture, TVs, microwaves, chairs, and similar. Pickup is limited to Amazon packages at a Whole Foods pickup counter or an Amazon Locker on campus.',
     unit: 'item',
     highlight: true,
     tiers: [
@@ -125,13 +125,6 @@ export function isPickupStyle(service, mode) {
   return service === 'pickup' || (service === 'bigdrop' && mode === 'pickup');
 }
 
-// Temporary service pause. Keep order validation/pricing intact for existing orders.
-export const PICKUP_UNAVAILABLE_MESSAGE = 'Pickup is temporarily out of order. We are not accepting pickup orders right now. Please check back later.';
-export function isPickupUnavailable(order) {
-  return order.service === 'pickup' || order.baseService === 'pickup' ||
-    (order.service === 'bigdrop' && order.mode === 'pickup');
-}
-
 export function buildMemo({ service, quantity, dorm, room, carrier, tracking, source, mailroom, box, lockerLocation, locker, name, mode }) {
   const prefix = SERVICE_DETAILS[service].memoPrefix;
   let memo = `${prefix} ${quantity}x — ${dorm || '[Dorm]'} ${room || '[Room]'}`;
@@ -140,9 +133,9 @@ export function buildMemo({ service, quantity, dorm, room, carrier, tracking, so
     if (carrier || lines.length) memo += ` — ${carrier || '[Carrier]'} tracking: ${lines.join(', ') || '[Tracking #]'}`;
   }
   if (isPickupStyle(service, mode)) {
-    memo += source === 'locker'
-      ? ` — ${lockerLocation || '[Locker location]'} locker: ${locker || '[Locker code]'}`
-      : ` — ${mailroom || '[Mailroom]'} mailroom, Box #${box || '[Box #]'}, Name: ${name || '[Full name]'}`;
+    const pickupLocation = lockerLocation || mailroom || '[Amazon pickup location]';
+    const pickupCode = locker || box || '[Amazon pickup code]';
+    memo += ` — ${source === 'campus-locker' ? 'Amazon Locker' : 'Whole Foods Amazon pickup'}: ${pickupLocation}, code ${pickupCode}`;
   }
   return memo;
 }
@@ -197,14 +190,9 @@ export function validateOrder(o) {
     }
   }
   if (isPickupStyle(o.service, o.mode)) {
-    if (o.source === 'locker') {
-      if (!String(o.lockerLocation ?? '').trim()) missing.push('which locker (building)');
-      if (!/^\d{6}$/.test(String(o.locker ?? '').trim())) missing.push('6-digit locker code');
-    } else {
-      if (!String(o.mailroom ?? '').trim()) missing.push('which mailroom (building)');
-      if (!String(o.box ?? '').trim()) missing.push('Duke box #');
-      if (!String(o.name ?? '').trim()) missing.push('your name');
-    }
+    if (!['whole-foods', 'campus-locker'].includes(o.source)) missing.push('Amazon pickup type');
+    if (!String(o.lockerLocation ?? o.mailroom ?? '').trim()) missing.push('Amazon pickup location');
+    if (!String(o.locker ?? o.box ?? '').trim()) missing.push('Amazon pickup code');
   }
   return { valid: missing.length === 0, missing };
 }
@@ -267,7 +255,7 @@ if (typeof document !== 'undefined') {
   const makeServiceState = (service) => ({
     qty: 1, dorm: '', room: '', carrier: '', tracking: '', retailer: 'other', smsOptIn: false, payMethod: 'venmo', paymentBusy: false, saveError: '',
     stripeClientSecret: '', stripeError: '', stripeFreeOrder: false,
-    ...(service === 'pickup' || service === 'bigdrop' ? { source: 'mailbox', mailroom: '', box: '', lockerLocation: '', locker: '', name: '' } : {}),
+    ...(service === 'pickup' || service === 'bigdrop' ? { source: 'whole-foods', mailroom: '', box: '', lockerLocation: '', locker: '', name: '' } : {}),
     size: 'standard',
     ...(service === 'bigdrop' ? { mode: 'ship' } : {}),
   });
@@ -291,7 +279,8 @@ if (typeof document !== 'undefined') {
     if (s.savedOrder) return s.savedOrder;
     const service = s.size === 'bigdrop' ? 'bigdrop' : key;
     const promoCode = isPromoEligible(state.promoCode, s) ? state.promoCode : '';
-    return { service, baseService: key, orderSize: s.size, quantity: s.qty, dorm: s.dorm, room: s.room, phone: s.phone || '', carrier: s.carrier, tracking: s.tracking, retailer: s.retailer, smsOptIn: s.smsOptIn, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name, mode: s.mode, promoCode, payMethod: s.payMethod };
+    const pickupStyle = isPickupStyle(service, s.mode);
+    return { service, baseService: key, orderSize: s.size, quantity: s.qty, dorm: s.dorm, room: s.room, phone: s.phone || '', carrier: s.carrier, tracking: s.tracking, retailer: pickupStyle ? 'amazon' : s.retailer, smsOptIn: s.smsOptIn, source: s.source, mailroom: s.mailroom, box: s.box, lockerLocation: s.lockerLocation, locker: s.locker, name: s.name, mode: s.mode, promoCode, payMethod: s.payMethod };
   }
 
   function buildVM(key) {
@@ -305,14 +294,13 @@ if (typeof document !== 'undefined') {
     const total = calculateOrderTotal(service, s.qty, o.promoCode);
     const v = validateOrder(o);
     const pickupStyle = key === 'pickup';
-    const isLocker = pickupStyle && s.source === 'locker';
-    const showConsent = pickupStyle && !isLocker;
-    const consentText = showConsent ? buildConsent(s.name, s.mailroom) : '';
+    const showConsent = false;
+    const consentText = '';
     return {
       key, detail, tierIndex, total, subText: promoPercent ? `${s.qty} × ${money(tier.rate)} · ${promoPercent}% off (${money(subtotal)} → ${money(total)})` : `${s.qty} × ${money(tier.rate)}`,
       promoPercent, promoEntered: state.promoCode.trim(), promoHint: promoMessage(state.promoCode, s),
       memo: buildMemo(o), venmoNote: venmoNote(o), ready: v.valid, missing: v.missing,
-      isLocker, showConsent, consentText, pickupStyle,
+      showConsent, consentText, pickupStyle,
       requests: (() => { try { return splitPaymentRequests(o); } catch { return []; } })(),
       zelleLine: zelleLine(o),
     };
@@ -322,7 +310,7 @@ if (typeof document !== 'undefined') {
     const isBigDrop = state[state.active].size === 'bigdrop';
     return `
       <div class="tabs" aria-label="Order service">${['express', 'pickup', 'returns'].map((k) =>
-        `<button type="button" class="tab${state.active === k ? ' active' : ''}" data-action="tab" data-service="${k}">${SERVICE_DETAILS[k].title}${k === 'pickup' ? ' <span class="service-status">Paused</span>' : ''}</button>`
+        `<button type="button" class="tab${state.active === k ? ' active' : ''}" data-action="tab" data-service="${k}">${SERVICE_DETAILS[k].title}</button>`
       ).join('')}</div>
       <div class="toggle-row" aria-label="Order size"${state.active === 'pickup' ? ' hidden' : ''}><button type="button" class="tab${!isBigDrop ? ' active' : ''}" data-action="size" data-size="standard">Normal size</button><button type="button" class="tab${isBigDrop ? ' active' : ''}" data-action="size" data-size="bigdrop">Big Drop</button></div>`;
   }
@@ -371,21 +359,16 @@ if (typeof document !== 'undefined') {
   function sourceToggleHtml(key) {
     const s = state[key];
     if (key !== 'pickup') return '';
-    const isLocker = s.source === 'locker';
+    const isLocker = s.source === 'campus-locker';
     return `
       <div class="toggle-row">
-        <button type="button" class="tab${!isLocker ? ' active' : ''}" data-action="source" data-source="mailbox">Mailroom box</button>
-        <button type="button" class="tab${isLocker ? ' active' : ''}" data-action="source" data-source="locker">Locker</button>
+        <button type="button" class="tab${!isLocker ? ' active' : ''}" data-action="source" data-source="whole-foods">Whole Foods · Amazon pickup</button>
+        <button type="button" class="tab${isLocker ? ' active' : ''}" data-action="source" data-source="campus-locker">Amazon Locker · campus</button>
       </div>
-      ${isLocker ? `
       <div class="field-grid">
-        <label>Which locker (building)<input type="text" placeholder="e.g. Bell Tower" value="${esc(s.lockerLocation)}" data-field="lockerLocation"></label>
-        <label>Locker code (6 digits)<input type="text" inputmode="numeric" maxlength="6" placeholder="e.g. 447128" value="${esc(s.locker)}" data-field="locker"></label>
-      </div>` : `
-      <div class="field-grid">
-        <label>Which mailroom (building)<input type="text" placeholder="e.g. Few Quad" value="${esc(s.mailroom)}" data-field="mailroom"></label>
-        <label>Duke box #<input type="text" placeholder="e.g. 90123" value="${esc(s.box)}" data-field="box"></label>
-      </div>`}`;
+        <label>${isLocker ? 'Which campus Amazon Locker?' : 'Which Whole Foods pickup location?'}<input type="text" placeholder="${isLocker ? 'e.g. Bryan Center' : 'e.g. Durham' }" value="${esc(s.lockerLocation)}" data-field="lockerLocation"></label>
+        <label>Amazon pickup code<input type="text" placeholder="Enter the code from Amazon" value="${esc(s.locker)}" data-field="locker"></label>
+      </div>`;
   }
 
   function consentHtml(key, vm) {
@@ -432,7 +415,6 @@ if (typeof document !== 'undefined') {
   }
 
   function cardHtml(key) {
-    if (key === 'pickup') return `<section class="card pickup-paused" aria-labelledby="pickup-paused-title"><div class="pause-label">Temporarily unavailable</div><h2 id="pickup-paused-title">Pickup is taking a pause.</h2><p>We’re not accepting mailroom or locker pickup orders right now. Please check back later.</p><button type="button" class="pause-action" data-action="tab" data-service="express">Explore Express <span aria-hidden="true">→</span></button></section>`;
     const displayService = state[key].size === 'bigdrop' ? 'bigdrop' : key;
     const detail = SERVICE_DETAILS[displayService];
     const s = state[key];
@@ -460,7 +442,7 @@ if (typeof document !== 'undefined') {
         </div>
         <label>Phone number<input type="tel" inputmode="tel" autocomplete="tel" placeholder="e.g. (919) 555-0123" value="${esc(s.phone || '')}" data-field="phone" required></label>
         ${sourceToggleHtml(key)}
-        ${key !== 'returns' ? `<div class="tracking-fields"><label>Ordered from<select data-field="retailer"><option value="other"${s.retailer === 'other' ? ' selected' : ''}>Another store</option><option value="amazon"${s.retailer === 'amazon' ? ' selected' : ''}>Amazon</option></select></label><label>Carrier (if known)<input type="text" placeholder="e.g. UPS, USPS, FedEx, DHL" value="${esc(s.carrier)}" data-field="carrier"></label><label>Tracking/order numbers (if available)<span class="field-hint">If you opt in below, we’ll text 24–48 hours after payment to confirm shipping details and estimated delivery.</span><textarea rows="3" placeholder="Enter tracking/order number if available" data-field="tracking"></textarea></label></div>` : ''}
+        ${key !== 'returns' ? `<div class="tracking-fields">${key === 'pickup' && (s.size !== 'bigdrop' || s.mode === 'pickup') ? '<div class="field-hint">Amazon package pickup</div>' : `<label>Ordered from<select data-field="retailer"><option value="other"${s.retailer === 'other' ? ' selected' : ''}>Another store</option><option value="amazon"${s.retailer === 'amazon' ? ' selected' : ''}>Amazon</option></select></label>`}<label>Carrier (if known)<input type="text" placeholder="e.g. UPS, USPS, FedEx, DHL" value="${esc(s.carrier)}" data-field="carrier"></label><label>Tracking/order numbers (if available)<span class="field-hint">If you opt in below, we’ll text 24–48 hours after payment to confirm shipping details and estimated delivery.</span><textarea rows="3" placeholder="Enter tracking/order number if available" data-field="tracking"></textarea></label></div>` : ''}
         ${key !== 'returns' ? `<label class="sms-opt-in"><input type="checkbox" data-field="smsOptIn" ${s.smsOptIn ? 'checked' : ''}> DevilDrop may text me once after payment to request shipping details and an estimated delivery date. Message and data rates may apply. Reply STOP to opt out or HELP for help.</label>` : ''}
         ${consentHtml(key, vm)}
         <label>Promo code (optional)
